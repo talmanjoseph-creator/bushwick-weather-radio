@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Utrecht Weather Radio v23: sound -->
+<!-- Utrecht Weather Radio v24: the void -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -114,7 +114,9 @@
     color:var(--dim);
     text-align:center;
     line-height:1.7;
+    user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; touch-action:none;
   }
+  .meta.warn{ color:var(--accent); }
 
   hr{
     border:0;
@@ -1128,6 +1130,61 @@
     showSound();
     if (soundOn){ ac(); SFX.on(); }
   });
+
+  /* ---------- the void: hold the meta line and the titles never stop ----------
+     Hidden on purpose, warned once, and only for as long as you hold. */
+  var voidTimer = null, voidRun = null, voidWarned = false, metaEl = document.getElementById("meta");
+  try { voidWarned = localStorage.getItem("uwr:voidwarned") === "1"; } catch(e){}
+  var MODS = ["", "", "big", "up", "dn", "lf", "rt"];
+  function voidStart(){
+    if (intro.on || carding || voidRun) return;
+    carding = true;
+    document.body.classList.add("cut");
+    elCard.classList.add("show");
+    var n = 0;
+    function cut(){
+      var c = CARDS[Math.random()*CARDS.length|0], inv = Math.random() < 0.35;
+      var key = SCENE_KEYS[Math.random()*SCENE_KEYS.length|0];
+      applyTheme(key, true);
+      elCard.className = "show" + (inv ? " inv" : "");
+      // re-roll the treatment so even a repeated word lands differently
+      elCard.innerHTML = c.html.replace(/class="w (mono|dg) fit[^"]*"/, function(m, f){ return 'class="w ' + f + ' fit ' + MODS[Math.random()*MODS.length|0] + '"'; });
+      fitWords();
+      SFX.cut(n++, inv);
+    }
+    cut();
+    voidRun = setInterval(cut, 85);
+  }
+  function voidStop(){
+    clearTimeout(voidTimer);
+    if (!voidRun) return;
+    clearInterval(voidRun); voidRun = null;
+    elCard.className = ""; elCard.innerHTML = "";
+    carding = false;
+    applyTheme(current);
+    document.body.classList.remove("cut");
+    SFX.thud();
+  }
+  metaEl.addEventListener("pointerdown", function(e){
+    if (intro.on || carding) return;
+    e.preventDefault();
+    try { metaEl.setPointerCapture(e.pointerId); } catch(err){}
+    clearTimeout(voidTimer);
+    voidTimer = setTimeout(function(){
+      if (!voidWarned){
+        voidWarned = true;
+        try { localStorage.setItem("uwr:voidwarned", "1"); } catch(err){}
+        var was = metaEl.innerHTML;
+        metaEl.classList.add("warn");
+        metaEl.innerHTML = "&#9888; FLASHING LIGHTS &middot; HOLD AGAIN TO ENTER THE VOID";
+        setTimeout(function(){ metaEl.classList.remove("warn"); if (!override) metaEl.innerHTML = was; }, 3000);
+        return;
+      }
+      voidStart();
+    }, 600);
+  });
+  ["pointerup","pointercancel"].forEach(function(ev){ metaEl.addEventListener(ev, voidStop); });
+  window.addEventListener("blur", voidStop);
 
   /* ---------- title card ----------
      Six hard cuts at 3/s (under the flash-safety line), each a different
