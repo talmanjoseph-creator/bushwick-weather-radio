@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Utrecht Weather Radio v20: forecast resilience, clock in the scene -->
+<!-- Utrecht Weather Radio v21: forecast from the repo -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -1193,14 +1193,33 @@
 
   function scheduleWeather(ms){ clearTimeout(weatherTimer); weatherTimer = setTimeout(loadWeather, ms); }
 
-  function loadWeather(){
-    fetch("https://api.open-meteo.com/v1/forecast?latitude="+LAT+"&longitude="+LON+
-          "&current=temperature_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m" +
-          "&daily=sunrise,sunset&forecast_days=1&timeformat=unixtime&timezone=Europe%2FAmsterdam")
+  /* Order of trust: weather.json (written by the GitHub Action every 15 min),
+     then Open-Meteo directly, then whatever this phone saw last. */
+  var API = "https://api.open-meteo.com/v1/forecast?latitude="+LAT+"&longitude="+LON+
+            "&current=temperature_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m" +
+            "&daily=sunrise,sunset&forecast_days=1&timeformat=unixtime&timezone=Europe%2FAmsterdam";
+
+  function fromRepo(){
+    return fetch("weather.json?t=" + (Date.now()/60000|0))
+      .then(function(r){ if (!r.ok) throw 0; return r.json(); })
+      .then(function(d){
+        if (!d || !d.current || !(Date.now() - d.fetchedAt < 45*60*1000)) throw 0;   // stale: the Action is behind
+        return d;
+      });
+  }
+  function fromApi(){
+    return fetch(API)
       .then(function(r){ return r.json(); })
       .then(function(d){
         if (!d || !d.current) throw new Error(d && d.reason || "no data");
         d.fetchedAt = Date.now();
+        return d;
+      });
+  }
+
+  function loadWeather(){
+    fromRepo().catch(fromApi)
+      .then(function(d){
         lastGood = d;
         try { localStorage.setItem("uwr:forecast", JSON.stringify(d)); } catch(e){}
         applyForecast(d, false);

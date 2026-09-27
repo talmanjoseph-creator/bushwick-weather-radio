@@ -1,0 +1,32 @@
+name: data
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: news
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/fetch-news.mjs
+      - run: node scripts/fetch-weather.mjs
+      - name: commit what changed
+        run: |
+          git config user.name "data-bot"
+          git config user.email "actions@users.noreply.github.com"
+          # news: only when a headline changed, not just the timestamp
+          git diff --quiet -I '"updated"' -- news.json || git add news.json
+          # weather: whenever the forecast file changed
+          git diff --quiet -- weather.json || git add weather.json
+          if git diff --cached --quiet; then
+            echo "no change"
+          else
+            git commit -m "data: $(date -u +%Y-%m-%dT%H:%MZ)"
+            git push
+          fi

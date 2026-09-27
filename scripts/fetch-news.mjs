@@ -1,5 +1,5 @@
 // Fetches the ticker's two RSS feeds and writes news.json for the site.
-// Run by .github/workflows/news.yml every 15 minutes.
+// Run by .github/workflows/data.yml every 15 minutes.
 import { writeFileSync, readFileSync, existsSync } from "node:fs";
 
 const FEEDS = {
