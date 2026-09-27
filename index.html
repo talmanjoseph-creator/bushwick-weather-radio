@@ -1,12 +1,12 @@
 <!doctype html>
-<!-- Utrecht Weather Radio v6: media session, icons, link preview -->
+<!-- Utrecht Weather Radio v7: title sequence -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Utrecht Weather Radio</title>
 <meta name="description" content="Current Utrecht weather as a pixel scene, NTS Radio live, and the day's headlines.">
-<meta name="theme-color" content="#0E1A24">
+<meta name="theme-color" content="#080D1C">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta property="og:type" content="website">
@@ -22,7 +22,7 @@
 
 <style>
   :root{
-    --page:#0E1A24;
+    --page:#080D1C;
     --ink:#EDE9E0;
     --dim:rgba(237,233,224,.46);
     --line:rgba(237,233,224,.16);
@@ -216,13 +216,25 @@
     color:var(--dim);
   }
 
+  /* --- title sequence: chrome waits offstage until the scene has drawn --- */
+  .intro .readout, .intro .meta, .intro hr, .intro .channels, .intro .news{
+    opacity:0;
+    transform:translateY(6px);
+  }
+  .readout, .meta, hr, .channels, .news{
+    transition:opacity .35s steps(4,end), transform .35s steps(4,end);
+  }
+  .cond .caret{ display:inline-block; width:.5em; background:var(--ink); height:1em; vertical-align:-.15em; margin-left:2px; animation:caret .6s steps(2,end) infinite }
+  @keyframes caret{ 0%,50%{opacity:1} 51%,100%{opacity:0} }
+
   @media (prefers-reduced-motion:reduce){
     .dot.beat{animation:none}
+    .cond .caret{animation:none}
     *{transition-duration:.01ms !important}
   }
 </style>
 </head>
-<body>
+<body class="intro">
 
 <main>
   <div class="news" id="news" hidden>
@@ -369,7 +381,15 @@
   var BUILDINGS=[[0,8,54],[8,8,52],[16,8,55],[24,6,51],[30,6,54],[36,8,53],[44,7,55],[51,6,52],[57,7,54]];
   var WINDOWS=[[2,57],[5,60],[10,55],[13,58],[18,58],[21,60],[26,54],[32,57],[38,56],[41,59],[46,58],[53,55],[59,57]];
 
-  function skyline(ink, lit){
+  function skyline(ink, lit, towerF, roofF){
+    if (towerF === undefined) towerF = 1;
+    if (roofF  === undefined) roofF  = 1;
+    ctx.save();
+    ctx.beginPath();
+    // the tower builds upward from its base, the roofline fills in from the left
+    ctx.rect(0, 58 - Math.round(44*towerF), 20, 64);
+    ctx.rect(0, 50, Math.round(64*roofF), 14);
+    ctx.clip();
     ctx.fillStyle = ink;
     /* Dom Tower rises behind the rooftops */
     ctx.fillRect(12,24,5,34);   // shaft
@@ -387,12 +407,13 @@
     }
     ctx.fillRect(9,50,6,2);     // stepped gables
     ctx.fillRect(45,53,5,2);
-    if (lit){
+    if (lit && roofF >= 1){
       ctx.fillStyle = "#FFD98A";
       for(var j=0;j<WINDOWS.length;j++){
         if ((frame + j*5) % 40 > 6) ctx.fillRect(WINDOWS[j][0], WINDOWS[j][1], 1, 1);
       }
     }
+    ctx.restore();
   }
 
   /* ---------- the scenes ---------- */
@@ -507,18 +528,114 @@
   /* ---------- render loop at a deliberate 8fps: GIF cadence, not 60fps polish ---------- */
   var frame = 0, current = "clearDay", isNight = false;
 
+  /* ---------- title sequence ----------
+     A: sky dithers in, row by row          0.0 – 0.8s
+     B: tower builds, roofline fills        0.5 – 1.5s
+     C: weather arrives (sun rises, or the  1.6s or when the forecast lands
+        sky's elements fade in)             +0.9s
+     D: readout counts up, chrome slides in C + 0.5s
+     Reduced motion: skipped entirely.                                  */
+  var intro = {
+    on: !reduce,
+    t: 0,
+    weatherAt: null,   // seconds into the intro when the forecast landed
+    cStart: null,
+    done: false
+  };
+  var ELEMENTS_RISE = { clearDay:1, clearNight:1, cloudyDay:1, cloudyNight:1 };
+
+  function ease(t){ t = Math.max(0, Math.min(1, t)); return 1 - Math.pow(1 - t, 3); }
+
   function paint(){
     var p = SCENES[current];
     var lit = isNight || current === "thunder";
-    ctx.drawImage(skyLayer(p.sky), 0, 0);
-    if (current === "fog"){
-      // fog is the one condition that swallows the buildings rather than sitting behind them
-      skyline(p.ink, lit);
-      painters.fog(frame, p);
-    } else {
-      (painters[current] || painters.overcast)(frame, p);
-      skyline(p.ink, lit);
+
+    if (!intro.on){
+      ctx.drawImage(skyLayer(p.sky), 0, 0);
+      if (current === "fog"){
+        // fog is the one condition that swallows the buildings rather than sitting behind them
+        skyline(p.ink, lit);
+        painters.fog(frame, p);
+      } else {
+        (painters[current] || painters.overcast)(frame, p);
+        skyline(p.ink, lit);
+      }
+      return;
     }
+
+    var t = intro.t;
+    var rows   = Math.min(64, Math.floor(ease(t / 0.8) * 64));
+    var towerF = ease((t - 0.5) / 0.7);
+    var roofF  = ease((t - 0.7) / 0.8);
+    if (intro.cStart === null && t >= 1.6 && (intro.weatherAt !== null || t >= 4.5)) intro.cStart = t;
+    var c = intro.cStart === null ? 0 : ease((t - intro.cStart) / 0.9);
+
+    // sky: revealed rows show the dithered gradient, the rest is still dark
+    ctx.drawImage(skyLayer(p.sky), 0, 0);
+    ctx.fillStyle = p.page;
+    if (rows < 64) ctx.fillRect(0, rows, 64, 64 - rows);
+    // a one-row scanline at the reveal edge
+    if (rows > 0 && rows < 64){ ctx.fillStyle = "rgba(255,255,255,.35)"; ctx.fillRect(0, rows - 1, 64, 1); }
+
+    if (c > 0){
+      ctx.save();
+      ctx.globalAlpha = c;
+      if (ELEMENTS_RISE[current]){
+        // sun and moon come up from behind the roofline; clouds ride up with them
+        ctx.translate(0, Math.round((1 - c) * 30));
+      }
+      if (current !== "fog") (painters[current] || painters.overcast)(frame, p);
+      ctx.restore();
+    }
+    skyline(p.ink, lit && c >= 1, towerF, roofF);
+    if (c > 0 && current === "fog"){
+      ctx.save(); ctx.globalAlpha = c; painters.fog(frame, p); ctx.restore();
+    }
+  }
+
+  function runIntro(){
+    var t0 = performance.now();
+    var chromeShown = false, countStarted = false;
+    function step(now){
+      intro.t = (now - t0) / 1000;
+      paint();
+      if (intro.cStart !== null){
+        var d = intro.t - intro.cStart;
+        if (d >= 0.5 && !countStarted){ countStarted = true; countUp(); }
+        if (d >= 0.8 && !chromeShown){ chromeShown = true; document.body.classList.remove("intro"); }
+        if (d >= 1.6){ intro.on = false; intro.done = true; paint(); return; }
+      }
+      requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  /* the numbers arrive the way an old display would: counted, then typed */
+  var countTimer = null;
+  function countUp(){
+    if (tempC === null){ renderTemp(); typeCond(); return; }
+    var target = useF ? Math.round(tempC*9/5+32) : Math.round(tempC);
+    var n = 0, steps = Math.max(1, Math.abs(target)), i = 0;
+    clearInterval(countTimer);
+    countTimer = setInterval(function(){
+      i++;
+      n = Math.round(target * ease(i / 12));
+      elTemp.textContent = n + "\u00B0";
+      if (i >= 12){ clearInterval(countTimer); renderTemp(); }
+    }, 55);
+    typeCond();
+  }
+  var typeTimer = null;
+  function typeCond(){
+    var text = condLabel || "";
+    clearInterval(typeTimer);
+    var i = 0;
+    elCond.innerHTML = '<span class="caret"></span>';
+    typeTimer = setInterval(function(){
+      i++;
+      elCond.innerHTML = esc(text.slice(0, i)) + (i < text.length ? '<span class="caret"></span>' : "");
+      if (i >= text.length) clearInterval(typeTimer);
+    }, 45);
   }
 
   function applyTheme(key){
@@ -528,11 +645,11 @@
     root.setProperty("--accent", p.accent);
   }
 
-  paint();
-  if (!reduce) setInterval(function(){ frame++; paint(); }, 125);
+  if (intro.on) runIntro(); else { document.body.classList.remove("intro"); paint(); }
+  setInterval(function(){ frame++; if (!intro.on && !reduce) paint(); else if (reduce && !frame) paint(); }, 125);
 
   /* ---------- weather ---------- */
-  var useF = false, tempC = null;
+  var useF = false, tempC = null, condLabel = "";
   var elTemp = document.getElementById("temp"),
       elCond = document.getElementById("cond"),
       elMeta = document.getElementById("meta");
@@ -552,10 +669,15 @@
       .then(function(d){
         var c = d.current;
         tempC = c.temperature_2m;
-        renderTemp();
         var info = decode(c.weather_code, c.is_day === 1);
         isNight = c.is_day !== 1;
-        elCond.textContent = info.label;
+        condLabel = info.label;
+        if (intro.on){
+          if (intro.weatherAt === null) intro.weatherAt = intro.t;
+        } else {
+          renderTemp();
+          elCond.textContent = info.label;
+        }
         elMeta.innerHTML = "UTRECHT, NETHERLANDS &middot; WMO " + c.weather_code +
                            " &middot; " + (c.is_day === 1 ? "DAY" : "NIGHT");
         current = info.scene;
@@ -564,8 +686,9 @@
         updateMediaSession();
       })
       .catch(function(){
-        elCond.textContent = "no signal from the sky";
-        elTemp.textContent = "--\u00B0";
+        condLabel = "no signal from the sky";
+        if (intro.on){ if (intro.weatherAt === null) intro.weatherAt = intro.t; }
+        else { elCond.textContent = condLabel; elTemp.textContent = "--\u00B0"; }
       });
   }
   loadWeather();
