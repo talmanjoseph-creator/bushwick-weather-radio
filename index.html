@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Weather Radio v28: the calendar -->
+<!-- Weather Radio v29: postcards -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -348,6 +348,7 @@
   <div class="tags">
     <button class="soundtag" id="soundTag" data-on="0" aria-pressed="false">&#9834; SOUND OFF</button>
     <button class="soundtag" id="cityTag" aria-label="Switch city">&#8646; NEW YORK</button>
+    <button class="soundtag" id="cardTag" aria-label="Share a postcard of the current scene">&#9993; POSTCARD</button>
   </div>
 </main>
 
@@ -1276,6 +1277,54 @@
     SFX.thud();
   }
   elCity.addEventListener("click", function(){ switchCity(city.other); });
+
+  /* ---------- postcards: the scene, the time and the temperature as a 1080x1080 image ---------- */
+  var elPost = document.getElementById("cardTag");
+  function postcard(){
+    var p = scenePalette(current), page = getComputedStyle(document.documentElement).getPropertyValue("--page").trim() || p.page;
+    var W = 1080, c = document.createElement("canvas"); c.width = c.height = W;
+    var g = c.getContext("2d"); g.imageSmoothingEnabled = false;
+    g.fillStyle = page; g.fillRect(0, 0, W, W);
+    // the scene at 12x, with its border
+    var S = 768, sx = (W - S)/2, sy = 84;
+    g.fillStyle = "rgba(237,233,224,.16)"; g.fillRect(sx - 8, sy - 8, S + 16, S + 16);
+    g.fillStyle = page; g.fillRect(sx, sy, S, S);
+    g.drawImage(cv, sx, sy, S, S);
+    // the readout
+    var v = tempC === null ? "--" : (useF ? Math.round(tempC*9/5+32) : Math.round(tempC));
+    g.textBaseline = "alphabetic";
+    g.font = "700 96px Silkscreen"; g.fillStyle = p.accent; g.textAlign = "left";
+    g.fillText(v + "\u00B0", sx, sy + S + 122);
+    var tw = g.measureText(v + "\u00B0").width;
+    g.font = "40px DotGothic16"; g.fillStyle = "#EDE9E0";
+    g.fillText(condLabel || "", sx + tw + 28, sy + S + 122);
+    var when = new Date().toLocaleString("en-GB", { timeZone: city.tz, weekday:"short", day:"numeric", month:"short", hour:"2-digit", minute:"2-digit" }).toUpperCase();
+    g.font = "700 20px Silkscreen"; g.fillStyle = "rgba(237,233,224,.55)";
+    g.fillText(city.name + "  \u00B7  " + when, sx, sy + S + 176);
+    g.textAlign = "right";
+    g.fillText("WEATHER RADIO", sx + S, sy + S + 176);
+    return c;
+  }
+  function sharePostcard(){
+    if (intro.on || carding) return;
+    var fontsReady = document.fonts && document.fonts.load ? Promise.all([document.fonts.load("700 96px Silkscreen"), document.fonts.load("40px DotGothic16")]) : Promise.resolve();
+    fontsReady.then(function(){
+      var c = postcard(), name = city.key + "-" + new Date().toISOString().slice(0,16).replace(/[:T]/g, "-") + ".png";
+      c.toBlob(function(blob){
+        if (!blob) return;
+        var file = new File([blob], name, { type: "image/png" });
+        if (navigator.canShare && navigator.canShare({ files: [file] })){
+          navigator.share({ files: [file], title: city.title + " right now" }).catch(function(){});
+        } else {
+          var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(function(){ URL.revokeObjectURL(a.href); }, 5000);
+        }
+      }, "image/png");
+      SFX.chime();
+    });
+  }
+  elPost.addEventListener("click", sharePostcard);
 
   /* ---------- sound: small chip noises made in code, off until you say so ---------- */
   var AC = null, soundOn = false, elSound = document.getElementById("soundTag");
