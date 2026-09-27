@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Utrecht Weather Radio v19: forecast resilience -->
+<!-- Utrecht Weather Radio v20: forecast resilience, clock in the scene -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -754,9 +754,38 @@
     }
   }
 
+  /* ---------- the time, Utrecht time, in a 3x5 pixel face at the top right ---------- */
+  var DIGITS = {
+    "0":[7,5,5,5,7], "1":[2,6,2,2,7], "2":[7,1,7,4,7], "3":[7,1,7,1,7], "4":[5,5,7,1,1],
+    "5":[7,4,7,1,7], "6":[7,4,7,5,7], "7":[7,1,1,1,1], "8":[7,5,7,5,7], "9":[7,5,7,1,7]
+  };
+  function glyph(ch, x, y, col){
+    var rows = DIGITS[ch]; if (!rows) return;
+    ctx.fillStyle = col;
+    for (var r=0;r<5;r++) for (var c=0;c<3;c++) if (rows[r] & (4 >> c)) ctx.fillRect(x+c, y+r, 1, 1);
+  }
+  function clockInScene(p){
+    var t = new Date().toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit", timeZone:"Europe/Amsterdam" });
+    var x = 45, y = 2, colonOn = (Date.now()/1000|0) % 2 === 0;
+    var shadow = "rgba(0,0,0,.55)", ink = "#EDE9E0";
+    function draw(dx, dy, col){
+      var cx = x + dx;
+      for (var i=0;i<t.length;i++){
+        var ch = t[i];
+        if (ch === ":"){
+          if (colonOn){ ctx.fillStyle = col; ctx.fillRect(cx, y+dy+1, 1, 1); ctx.fillRect(cx, y+dy+3, 1, 1); }
+          cx += 2;
+        } else { glyph(ch, cx, y+dy, col); cx += 4; }
+      }
+    }
+    draw(1, 1, shadow);
+    draw(0, 0, ink);
+  }
+
   function life(p, lit){
     birds(p);
     drawTrain(lit);
+    clockInScene(p);
   }
 
   /* ---------- render loop at a deliberate 8fps: GIF cadence, not 60fps polish ---------- */
