@@ -1,0 +1,29 @@
+name: news
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: news
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/fetch-news.mjs
+      - name: commit if the headlines changed
+        run: |
+          git config user.name "news-bot"
+          git config user.email "actions@users.noreply.github.com"
+          # only commit when a headline changed, not just the timestamp
+          if git diff --quiet -I '"updated"' -- news.json; then
+            echo "no change"
+          else
+            git add news.json
+            git commit -m "news: $(date -u +%Y-%m-%dT%H:%MZ)"
+            git push
+          fi

@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Utrecht Weather Radio v15 -->
+<!-- Utrecht Weather Radio v16: news from the repo -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -1299,14 +1299,19 @@
   var elNews   = document.getElementById("news"),
       elTag    = document.getElementById("newsTag"),
       elTicker = document.getElementById("tickerInner");
-  // Your own proxy (see worker/README.md). Leave empty to use rss2json only.
-  var NEWS_PROXY = "";
+  // news.json is written by a GitHub Action every 15 minutes (scripts/fetch-news.mjs);
+  // rss2json is only the fallback if that file is missing or stale.
   var RSS = { en: "https://www.dutchnews.nl/feed/", nl: "https://www.rtvutrecht.nl/rss/nieuws.xml" };
-  function feedUrls(lang){
-    var urls = [];
-    if (NEWS_PROXY) urls.push(NEWS_PROXY.replace(/\/$/, "") + "/?feed=" + lang);
-    urls.push("https://api.rss2json.com/v1/api.json?rss_url=" + encodeURIComponent(RSS[lang]));
-    return urls;
+  var newsFile = null;   // parsed news.json, once loaded
+  function loadNewsFile(){
+    return fetch("news.json?t=" + (Date.now()/60000|0))
+      .then(function(r){ if(!r.ok) throw 0; return r.json(); })
+      .then(function(d){
+        var age = (Date.now() - Date.parse(d.updated)) / 3600000;
+        if (!(age < 6)) throw 0;   // older than six hours: treat as stale
+        newsFile = d;
+        return d;
+      });
   }
   var newsLang = "en", newsCache = { en: null, nl: null };
 
@@ -1347,23 +1352,22 @@
   }
 
   function loadFeed(lang){
-    var urls = feedUrls(lang), i = 0;
-    function attempt(){
-      if (i >= urls.length){ renderNews(); return; }
-      fetch(urls[i++])
-        .then(function(r){ if(!r.ok) throw 0; return r.json(); })
-        .then(function(d){
-          var items = (d.items || []).slice(0, 10);
-          if(d.status !== "ok" || !items.length) throw 0;
-          newsCache[lang] = items;
-          renderNews();
-        })
-        .catch(attempt);   // next source
-    }
-    attempt();
+    var fromFile = newsFile && newsFile[lang] && newsFile[lang].length;
+    if (fromFile){ newsCache[lang] = newsFile[lang].slice(0, 10); renderNews(); return; }
+    fetch("https://api.rss2json.com/v1/api.json?rss_url=" + encodeURIComponent(RSS[lang]))
+      .then(function(r){ if(!r.ok) throw 0; return r.json(); })
+      .then(function(d){
+        var items = (d.items || []).slice(0, 10);
+        if(d.status !== "ok" || !items.length) throw 0;
+        newsCache[lang] = items;
+        renderNews();
+      })
+      .catch(function(){ renderNews(); });
   }
 
-  function loadNews(){ loadFeed("en"); loadFeed("nl"); }
+  function loadNews(){
+    loadNewsFile().catch(function(){ newsFile = null; }).then(function(){ loadFeed("en"); loadFeed("nl"); });
+  }
 
   elTag.addEventListener("click", function(){
     newsLang = (newsLang === "en") ? "nl" : "en";
