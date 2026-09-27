@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Utrecht Weather Radio v10: faster, longer title card -->
+<!-- Utrecht Weather Radio v11: dawn and dusk -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -328,6 +328,52 @@
     thunder:     {page:"#0B0D14", accent:"#FFE45C", sky:["#232739","#4A4F63"], ink:"#12141D"}
   };
 
+  /* ---------- time of day: the real sun, and the half hour either side of it ---------- */
+  var sun = { rise:null, set:null };        // unix seconds, from the forecast
+  var TW = {
+    dawn: { page:"#1B1430", accent:"#FFB36B", sky:["#4C3B7A","#F5A867"], ink:"#1E1838" },
+    dusk: { page:"#1A1128", accent:"#FF8F5E", sky:["#2F2757","#E86F4C"], ink:"#1A1430" }
+  };
+  // how much each scene lets the twilight colour through
+  var TW_WEIGHT = { clearDay:1, clearNight:1, cloudyDay:.9, cloudyNight:.9, overcast:.45,
+                    fog:.3, drizzle:.4, rain:.35, snow:.4, thunder:.25 };
+
+  function timeOfDay(){
+    var now = Date.now()/1000;
+    if (!sun.rise) return { night:isNight, tw:0, phase:isNight ? "night" : "day", f:0.5 };
+    var night = now < sun.rise || now > sun.set;
+    var dRise = Math.abs(now - sun.rise)/60, dSet = Math.abs(now - sun.set)/60;
+    var tw = Math.max(0, 1 - Math.min(dRise, dSet)/35);
+    var f;
+    if (!night) f = (now - sun.rise)/(sun.set - sun.rise);
+    else if (now > sun.set) f = (now - sun.set)/((sun.rise + 86400) - sun.set);
+    else f = (now - (sun.set - 86400))/(sun.rise - (sun.set - 86400));
+    return { night:night, tw:tw, phase: dRise < dSet ? "dawn" : "dusk", f:Math.max(0, Math.min(1, f)) };
+  }
+  function sunPos(){ var f = timeOfDay().f; return { x: Math.round(8 + f*48), y: Math.round(48 - Math.sin(f*Math.PI)*30) }; }
+  function moonPos(){ var f = timeOfDay().f; return { x: Math.round(56 - f*48), y: Math.round(46 - Math.sin(f*Math.PI)*28) }; }
+
+  function hexRgb(h){ return [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)]; }
+  function mixHex(a, b, t){
+    var A = hexRgb(a), B = hexRgb(b), o = "#";
+    for (var i=0;i<3;i++){ var v = Math.round(A[i] + (B[i]-A[i])*t); o += (v < 16 ? "0" : "") + v.toString(16); }
+    return o;
+  }
+  var palCache = {};
+  function scenePalette(key){
+    var base = SCENES[key], tod = timeOfDay();
+    var w = Math.round((TW_WEIGHT[key] || .4) * tod.tw * 10) / 10;
+    if (w <= 0) return base;
+    var ck = key + "|" + tod.phase + "|" + w;
+    if (palCache[ck]) return palCache[ck];
+    var t = TW[tod.phase];
+    var p = { page: mixHex(base.page, t.page, w), accent: mixHex(base.accent, t.accent, w),
+              sky: [mixHex(base.sky[0], t.sky[0], w), mixHex(base.sky[1], t.sky[1], w)],
+              ink: mixHex(base.ink, t.ink, w*0.6) };
+    palCache[ck] = p;
+    return p;
+  }
+
   /* ---------- WMO code -> scene + the language a forecast actually uses ---------- */
   function decode(code, isDay){
     var m = {
@@ -452,7 +498,7 @@
   /* ---------- the scenes ---------- */
   var painters = {
     clearDay: function(f,p){
-      var cx=35, cy=27;
+      var sp = sunPos(), cx=sp.x, cy=sp.y;
       for(var i=0;i<8;i++){
         var a = i*Math.PI/4 + f*0.05;
         var r1 = 11 + (f%2), r2 = 15 + (f%2);
@@ -464,12 +510,15 @@
     },
 
     clearNight: function(f,p){
+      var starA = 1 - timeOfDay().tw;   // stars come out as the light goes
+      ctx.save(); ctx.globalAlpha = starA;
       for(var i=0;i<34;i++){
         var sx = (R1[i]*64)|0, sy=(R2[i]*48)|0;
         var tw = (f + (R3[i]*8|0)) % 8;
         if (tw < 5) px(sx,sy, tw<2 ? "#FFFFFF" : "#B9C6EE");
       }
-      var cx=40, cy=22;
+      ctx.restore();
+      var mp = moonPos(), cx=mp.x, cy=mp.y;
       disc(cx,cy,8,"#EDE7CE");
       disc(cx-2,cy-2,2,"#D8D0AE");
       disc(cx+3,cy+2,2,"#D8D0AE");
@@ -477,18 +526,22 @@
     },
 
     cloudyDay: function(f,p){
-      disc(31,21,8,"#FFC93D"); disc(31,21,6,"#FFD84D");
+      var sp = sunPos();
+      disc(sp.x,sp.y,8,"#FFC93D"); disc(sp.x,sp.y,6,"#FFD84D");
       // the front cloud crosses the sun rather than sitting politely beside it
       cloud(wrap(f*0.35, 96)-16|0, 22, 1, "#F4F8FB", "#A9BDCC");
       cloud(wrap(f*0.2+52, 96)-16|0, 38, 1, "#E4EDF4", "#9AB0C1");
     },
 
     cloudyNight: function(f,p){
+      ctx.save(); ctx.globalAlpha = 1 - timeOfDay().tw;
       for(var i=0;i<18;i++){
         var sx=(R1[i]*64)|0, sy=(R2[i]*30)|0;
         if((f + (R3[i]*8|0))%8 < 5) px(sx,sy,"#C4CFF2");
       }
-      disc(26,17,7,"#EDE7CE"); disc(22,14,6,p.sky[0]);
+      ctx.restore();
+      var mp = moonPos();
+      disc(mp.x,mp.y,7,"#EDE7CE"); disc(mp.x-4,mp.y-3,6,p.sky[0]);
       cloud(wrap(f*0.3, 96)-16|0, 20, 1, "#4E5A84", "#333D63");
       cloud(wrap(f*0.18+52, 96)-16|0, 38, 1, "#3E4870", "#2A3355");
     },
@@ -681,7 +734,7 @@
   function ease(t){ t = Math.max(0, Math.min(1, t)); return 1 - Math.pow(1 - t, 3); }
 
   function paint(){
-    var p = SCENES[current];
+    var p = scenePalette(current);
     var lit = isNight || current === "thunder";
 
     if (!intro.on){
@@ -774,7 +827,7 @@
   }
 
   function applyTheme(key){
-    var p = SCENES[key];
+    var p = scenePalette(key);
     var root = document.documentElement.style;
     root.setProperty("--page", p.page);
     root.setProperty("--accent", p.accent);
@@ -875,8 +928,23 @@
   } else { document.body.classList.remove("intro"); paint(); }
   setInterval(function(){ frame++; if (!intro.on && !reduce) paint(); else if (reduce && !frame) paint(); }, 125);
 
+  var lastCode = null;
+  function tickDayNight(){
+    if (!sun.rise || lastCode === null) return;
+    var tod = timeOfDay();
+    if (tod.night !== isNight){
+      isNight = tod.night;
+      current = decode(lastCode, !isNight).scene;
+    }
+    if (!carding) applyTheme(current);   // twilight moves the tint by the minute
+  }
+  setInterval(tickDayNight, 30*1000);
+
   /* ---------- weather ---------- */
-  var useF = false, tempC = null, condLabel = "";
+  var useF = false, tempC = null, condLabel = "", windKmh = 0;
+  function clockStr(unix){
+    return new Date(unix*1000).toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit", timeZone:"Europe/Amsterdam" });
+  }
   var elTemp = document.getElementById("temp"),
       elCond = document.getElementById("cond"),
       elMeta = document.getElementById("meta");
@@ -891,13 +959,18 @@
 
   function loadWeather(){
     fetch("https://api.open-meteo.com/v1/forecast?latitude="+LAT+"&longitude="+LON+
-          "&current=temperature_2m,weather_code,is_day&timezone=Europe%2FAmsterdam")
+          "&current=temperature_2m,weather_code,is_day,wind_speed_10m" +
+          "&daily=sunrise,sunset&forecast_days=1&timeformat=unixtime&timezone=Europe%2FAmsterdam")
       .then(function(r){ return r.json(); })
       .then(function(d){
         var c = d.current;
+        if (!c) throw 0;
         tempC = c.temperature_2m;
-        var info = decode(c.weather_code, c.is_day === 1);
-        isNight = c.is_day !== 1;
+        windKmh = c.wind_speed_10m || 0;
+        if (d.daily && d.daily.sunrise && d.daily.sunrise[0]){ sun.rise = d.daily.sunrise[0]; sun.set = d.daily.sunset[0]; }
+        lastCode = c.weather_code;
+        isNight = sun.rise ? timeOfDay().night : (c.is_day !== 1);
+        var info = decode(c.weather_code, !isNight);
         condLabel = info.label;
         if (intro.on){
           if (intro.weatherAt === null) intro.weatherAt = intro.t;
@@ -906,7 +979,8 @@
           elCond.textContent = info.label;
         }
         elMeta.innerHTML = "UTRECHT, NETHERLANDS &middot; WMO " + c.weather_code +
-                           " &middot; " + (c.is_day === 1 ? "DAY" : "NIGHT");
+                           (sun.rise ? " &middot; &uarr;" + clockStr(sun.rise) + " &darr;" + clockStr(sun.set)
+                                     : " &middot; " + (isNight ? "NIGHT" : "DAY"));
         current = info.scene;
         if (!carding) applyTheme(current);
         paint();
