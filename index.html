@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Utrecht Weather Radio v18: drift saturation up -->
+<!-- Utrecht Weather Radio v19: forecast resilience -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -1131,46 +1131,70 @@
   }
   elTemp.addEventListener("click", function(){ useF = !useF; renderTemp(); });
 
+  var lastGood = null, weatherTimer = null;
+  try { lastGood = JSON.parse(localStorage.getItem("uwr:forecast") || "null"); } catch(e){}
+
+  function applyForecast(d, stale){
+    var c = d.current;
+    tempC = c.temperature_2m;
+    windKmh = c.wind_speed_10m || 0;
+    if (typeof c.wind_direction_10m === "number") windToRight = Math.sin(c.wind_direction_10m * Math.PI/180) < 0;  // from the west: streams east
+    if (d.daily && d.daily.sunrise && d.daily.sunrise[0]){ sun.rise = d.daily.sunrise[0]; sun.set = d.daily.sunset[0]; }
+    lastCode = c.weather_code;
+    isNight = sun.rise ? timeOfDay().night : (c.is_day !== 1);
+    var info = decode(c.weather_code, !isNight);
+    condLabel = info.label;
+    if (intro.on){
+      if (intro.weatherAt === null) intro.weatherAt = intro.t;
+    } else {
+      renderTemp();
+      elCond.textContent = info.label;
+    }
+    elMeta.innerHTML = "UTRECHT" +
+                       (sun.rise ? " &middot; SUNRISE " + clockStr(sun.rise) + " &middot; SUNSET " + clockStr(sun.set)
+                                 : " &middot; " + (isNight ? "NIGHT" : "DAY")) +
+                       (stale ? " &middot; LAST SEEN " + clockStr(d.fetchedAt/1000) : "");
+    realScene = info.scene;
+    if (intro.on) current = info.scene;
+    else if (!override) setScene(info.scene);
+    if (!carding) applyTheme(current);
+    paint();
+    updateMediaSession();
+  }
+
+  function scheduleWeather(ms){ clearTimeout(weatherTimer); weatherTimer = setTimeout(loadWeather, ms); }
+
   function loadWeather(){
     fetch("https://api.open-meteo.com/v1/forecast?latitude="+LAT+"&longitude="+LON+
           "&current=temperature_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m" +
           "&daily=sunrise,sunset&forecast_days=1&timeformat=unixtime&timezone=Europe%2FAmsterdam")
       .then(function(r){ return r.json(); })
       .then(function(d){
-        var c = d.current;
-        if (!c) throw 0;
-        tempC = c.temperature_2m;
-        windKmh = c.wind_speed_10m || 0;
-        if (typeof c.wind_direction_10m === "number") windToRight = Math.sin(c.wind_direction_10m * Math.PI/180) < 0;  // from the west: streams east
-        if (d.daily && d.daily.sunrise && d.daily.sunrise[0]){ sun.rise = d.daily.sunrise[0]; sun.set = d.daily.sunset[0]; }
-        lastCode = c.weather_code;
-        isNight = sun.rise ? timeOfDay().night : (c.is_day !== 1);
-        var info = decode(c.weather_code, !isNight);
-        condLabel = info.label;
-        if (intro.on){
-          if (intro.weatherAt === null) intro.weatherAt = intro.t;
-        } else {
-          renderTemp();
-          elCond.textContent = info.label;
-        }
-        elMeta.innerHTML = "UTRECHT" +
-                           (sun.rise ? " &middot; SUNRISE " + clockStr(sun.rise) + " &middot; SUNSET " + clockStr(sun.set)
-                                     : " &middot; " + (isNight ? "NIGHT" : "DAY"));
-        realScene = info.scene;
-        if (intro.on) current = info.scene;
-        else if (!override) setScene(info.scene);
-        if (!carding) applyTheme(current);
-        paint();
-        updateMediaSession();
+        if (!d || !d.current) throw new Error(d && d.reason || "no data");
+        d.fetchedAt = Date.now();
+        lastGood = d;
+        try { localStorage.setItem("uwr:forecast", JSON.stringify(d)); } catch(e){}
+        applyForecast(d, false);
+        scheduleWeather(10*60*1000);
       })
       .catch(function(){
-        condLabel = "no signal from the sky";
-        if (intro.on){ if (intro.weatherAt === null) intro.weatherAt = intro.t; }
-        else { elCond.textContent = condLabel; elTemp.textContent = "--\u00B0"; }
+        // the sky went quiet: show the last forecast we had, and try again soon
+        if (lastGood && lastGood.current && Date.now() - lastGood.fetchedAt < 12*3600*1000){
+          applyForecast(lastGood, true);
+        } else {
+          // nothing to fall back on: at least get night right from the clock
+          var h = new Date().getHours();
+          isNight = h < 7 || h >= 20;
+          if (!intro.on && !override) setScene(isNight ? "clearNight" : "clearDay"); else current = isNight ? "clearNight" : "clearDay";
+          condLabel = "no signal from the sky";
+          if (intro.on){ if (intro.weatherAt === null) intro.weatherAt = intro.t; }
+          else { elCond.textContent = condLabel; elTemp.textContent = "--\u00B0"; }
+          elMeta.innerHTML = "UTRECHT &middot; FORECAST UNAVAILABLE &middot; RETRYING";
+        }
+        scheduleWeather(60*1000);
       });
   }
   loadWeather();
-  setInterval(loadWeather, 10*60*1000);
 
   /* ---------- NTS ---------- */
   function chEls(ch){
