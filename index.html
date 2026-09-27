@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bushwick Weather Radio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=DotGothic16&display=swap">
+
+<style>
+  :root{
+    --page:#0E1A24;
+    --ink:#EDE9E0;
+    --dim:rgba(237,233,224,.46);
+    --line:rgba(237,233,224,.16);
+    --accent:#FFD84D;
+    --mono:"Silkscreen","Courier New",monospace;
+    --dot:"DotGothic16","Hiragino Kaku Gothic ProN",monospace;
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+
+  body{
+    background:var(--page);
+    color:var(--ink);
+    font-family:var(--dot);
+    min-height:100dvh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:32px 20px;
+    transition:background-color 1.2s ease;
+    -webkit-font-smoothing:none;
+  }
+
+  main{
+    width:100%;
+    max-width:340px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:26px;
+  }
+
+  /* --- the scene --- */
+  canvas{
+    width:clamp(192px,66vw,256px);
+    height:clamp(192px,66vw,256px);
+    image-rendering:pixelated;
+    image-rendering:crisp-edges;
+    display:block;
+    border:2px solid var(--line);
+  }
+
+  /* --- readout --- */
+  .readout{
+    display:flex;
+    align-items:baseline;
+    justify-content:center;
+    gap:14px;
+    width:100%;
+  }
+  .temp{
+    font-family:var(--mono);
+    font-weight:700;
+    font-size:52px;
+    line-height:.9;
+    letter-spacing:-.02em;
+    font-variant-numeric:tabular-nums;
+    color:var(--accent);
+    background:none;
+    border:0;
+    cursor:pointer;
+    padding:0;
+    transition:color 1.2s ease;
+  }
+  .temp:hover{opacity:.78}
+  .cond{
+    font-family:var(--dot);
+    font-size:17px;
+    color:var(--ink);
+    letter-spacing:.02em;
+  }
+
+  .meta{
+    font-family:var(--mono);
+    font-size:9px;
+    letter-spacing:.14em;
+    color:var(--dim);
+    text-align:center;
+    line-height:1.7;
+  }
+
+  hr{
+    border:0;
+    border-top:2px dotted var(--line);
+    width:100%;
+  }
+
+  /* --- radio --- */
+  .radio{
+    display:flex;
+    align-items:flex-start;
+    gap:14px;
+    width:100%;
+  }
+
+  button.play{
+    flex:none;
+    font-family:var(--mono);
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.06em;
+    color:var(--page);
+    background:var(--accent);
+    border:0;
+    padding:11px 12px;
+    min-width:74px;
+    cursor:pointer;
+    transition:background-color 1.2s ease,color 1.2s ease,transform .06s;
+  }
+  button.play:active{transform:translateY(2px)}
+  button.play[data-state="on"]{
+    background:transparent;
+    color:var(--accent);
+    box-shadow:inset 0 0 0 2px var(--accent);
+  }
+  :focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+
+  .nts{
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+    min-width:0;
+    flex:1;
+  }
+  .chan{
+    font-family:var(--mono);
+    font-size:9px;
+    letter-spacing:.14em;
+    color:var(--dim);
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  .dot{
+    width:6px;height:6px;
+    background:var(--accent);
+    display:inline-block;
+    transition:background-color 1.2s ease;
+  }
+  .dot.beat{animation:beat 2s steps(2,end) infinite}
+  @keyframes beat{0%,50%{opacity:1}51%,100%{opacity:.18}}
+
+  .show{
+    font-family:var(--dot);
+    font-size:15px;
+    line-height:1.25;
+    color:var(--ink);
+    overflow-wrap:anywhere;
+  }
+  .until{
+    font-family:var(--mono);
+    font-size:9px;
+    letter-spacing:.1em;
+    color:var(--dim);
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    .dot.beat{animation:none}
+    *{transition-duration:.01ms !important}
+  }
+</style>
+</head>
+<body>
+
+<main>
+  <canvas id="sky" width="64" height="64" role="img" aria-label="Pixel animation of current Bushwick weather"></canvas>
+
+  <div class="readout">
+    <button class="temp" id="temp" title="Click to switch units">--&deg;</button>
+    <div class="cond" id="cond">reading the sky</div>
+  </div>
+
+  <div class="meta" id="meta">BUSHWICK, BROOKLYN &middot; 40.694 N 73.921 W</div>
+
+  <hr>
+
+  <div class="radio">
+    <button class="play" id="play" data-state="off" aria-label="Play NTS 1">&#9654; PLAY</button>
+    <div class="nts">
+      <div class="chan">NTS 1 <span class="dot beat" id="dot"></span> LIVE FROM LONDON</div>
+      <div class="show" id="show" aria-live="polite">connecting&hellip;</div>
+      <div class="until" id="until"></div>
+    </div>
+  </div>
+</main>
+
+<audio id="audio" preload="none" crossorigin="anonymous"></audio>
+
+<script>
+(function(){
+  "use strict";
+
+  var LAT = 40.6944, LON = -73.9213;
+  var STREAM = "https://stream-relay-geo.ntslive.net/stream";
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------- palettes: each scene is its own small closed world ---------- */
+  var SCENES = {
+    clearDay:    {page:"#0E1A24", accent:"#FFD84D", sky:["#4E9BD6","#9ED2F0"], ink:"#123049"},
+    clearNight:  {page:"#080D1C", accent:"#8FA8E8", sky:["#080F2B","#1E2B58"], ink:"#04081A"},
+    cloudyDay:   {page:"#131E26", accent:"#CFE3F0", sky:["#7CA9C9","#BCD6E6"], ink:"#26404F"},
+    cloudyNight: {page:"#0A1020", accent:"#7C89B8", sky:["#0C1530","#232F5A"], ink:"#060B1E"},
+    overcast:    {page:"#16191C", accent:"#C2C9CF", sky:["#7C868F","#AEB6BE"], ink:"#2B3238"},
+    fog:         {page:"#1A1B19", accent:"#D6D8D3", sky:["#9EA19C","#C6C8C3"], ink:"#3A3D3A"},
+    drizzle:     {page:"#0D141A", accent:"#7FC4E8", sky:["#5E6E7C","#8FA0AD"], ink:"#22303A"},
+    rain:        {page:"#0D141A", accent:"#7FC4E8", sky:["#4A5764","#7A8998"], ink:"#1B262F"},
+    snow:        {page:"#141A20", accent:"#E8F2FA", sky:["#98A6B6","#CEDAE4"], ink:"#2E3946"},
+    thunder:     {page:"#0B0D14", accent:"#FFE45C", sky:["#232739","#4A4F63"], ink:"#12141D"}
+  };
+
+  /* ---------- WMO code -> scene + the language a forecast actually uses ---------- */
+  function decode(code, isDay){
+    var m = {
+      0:["clear","clear"], 1:["mainly clear","cloudy"], 2:["partly cloudy","cloudy"],
+      3:["overcast","overcast"], 45:["fog","fog"], 48:["freezing fog","fog"],
+      51:["light drizzle","drizzle"], 53:["drizzle","drizzle"], 55:["heavy drizzle","drizzle"],
+      56:["freezing drizzle","drizzle"], 57:["freezing drizzle","drizzle"],
+      61:["light rain","rain"], 63:["rain","rain"], 65:["heavy rain","rain"],
+      66:["freezing rain","rain"], 67:["freezing rain","rain"],
+      71:["light snow","snow"], 73:["snow","snow"], 75:["heavy snow","snow"], 77:["snow grains","snow"],
+      80:["rain showers","rain"], 81:["rain showers","rain"], 82:["violent showers","rain"],
+      85:["snow showers","snow"], 86:["snow showers","snow"],
+      95:["thunderstorm","thunder"], 96:["thunderstorm, hail","thunder"], 99:["thunderstorm, hail","thunder"]
+    };
+    var e = m[code] || ["unknown","overcast"];
+    var kind = e[1], key = kind;
+    if (kind === "clear")  key = isDay ? "clearDay"   : "clearNight";
+    if (kind === "cloudy") key = isDay ? "cloudyDay"  : "cloudyNight";
+    return {label:e[0], scene:key, isDay:isDay};
+  }
+
+  /* ---------- pixel plumbing ---------- */
+  var cv = document.getElementById("sky");
+  var ctx = cv.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+
+  function px(x,y,c){ ctx.fillStyle=c; ctx.fillRect(x|0,y|0,1,1); }
+  function disc(cx,cy,r,c){
+    ctx.fillStyle=c;
+    for(var y=-r;y<=r;y++){
+      var w = Math.floor(Math.sqrt(r*r - y*y));
+      ctx.fillRect(cx-w, cy+y, w*2+1, 1);
+    }
+  }
+
+  // Ordered dithering: the honest way to fake a gradient in a tiny palette.
+  var BAYER=[[0,8,2,10],[12,4,14,6],[3,11,1,9],[15,7,13,5]];
+  var skyCache = {};
+  function skyLayer(pair){
+    var k = pair[0]+pair[1];
+    if (skyCache[k]) return skyCache[k];
+    var off = document.createElement("canvas");
+    off.width = 64; off.height = 64;
+    var o = off.getContext("2d");
+    for(var y=0;y<64;y++){
+      var t = Math.pow(y/63, 0.85);
+      for(var x=0;x<64;x++){
+        var th = (BAYER[y&3][x&3] + 0.5)/16;
+        o.fillStyle = t > th ? pair[1] : pair[0];
+        o.fillRect(x,y,1,1);
+      }
+    }
+    skyCache[k] = off;
+    return off;
+  }
+
+  // deterministic scatter so the stars/drops don't reshuffle every frame
+  function seeded(n, seed){
+    var a=[], s=seed;
+    for(var i=0;i<n;i++){ s=(s*1103515245+12345)&0x7fffffff; a.push(s/0x7fffffff); }
+    return a;
+  }
+  var R1 = seeded(90, 7), R2 = seeded(90, 4111), R3 = seeded(90, 99991);
+
+  function cloud(cx,cy,s,body,shade){
+    disc(cx-3*s|0, cy+1, 3*s|0, shade);
+    disc(cx+3*s|0, cy+1, 4*s|0, shade);
+    disc(cx,       cy,   5*s|0, shade);
+    ctx.fillStyle = shade;
+    ctx.fillRect(cx-8*s|0, cy, 16*s|0, 5);
+    disc(cx-3*s|0, cy,   3*s|0, body);
+    disc(cx+3*s|0, cy,   4*s|0, body);
+    disc(cx,       cy-1, 5*s|0, body);
+    ctx.fillStyle = body;
+    ctx.fillRect(cx-8*s|0, cy-1, 16*s|0, 4);
+  }
+
+  function wrap(v,max){ v%=max; return v<0?v+max:v; }
+
+  /* The horizon is a Bushwick horizon: flat low-rise roofs and one wooden
+     water tower, which is the only skyline element anyone here would draw. */
+  var BUILDINGS=[[0,9,54],[9,7,51],[16,11,56],[27,8,50],[35,6,53],[41,10,55],[51,7,52],[58,6,57]];
+  var WINDOWS=[[2,57],[5,60],[11,54],[18,59],[22,58],[29,53],[37,56],[44,58],[47,60],[53,55],[60,60]];
+
+  function skyline(ink, lit){
+    ctx.fillStyle = ink;
+    for(var i=0;i<BUILDINGS.length;i++){
+      var b=BUILDINGS[i];
+      ctx.fillRect(b[0], b[2], b[1], 64-b[2]);
+    }
+    ctx.fillRect(29,43,6,6);                          // tank
+    ctx.fillRect(30,41,4,2);                          // conical cap, flattened
+    ctx.fillRect(29,49,1,2); ctx.fillRect(34,49,1,2); // legs
+    if (lit){
+      ctx.fillStyle = "#FFD98A";
+      for(var j=0;j<WINDOWS.length;j++){
+        if ((frame + j*5) % 40 > 6) ctx.fillRect(WINDOWS[j][0], WINDOWS[j][1], 1, 1);
+      }
+    }
+  }
+
+  /* ---------- the scenes ---------- */
+  var painters = {
+    clearDay: function(f,p){
+      var cx=32, cy=27;
+      for(var i=0;i<8;i++){
+        var a = i*Math.PI/4 + f*0.05;
+        var r1 = 11 + (f%2), r2 = 15 + (f%2);
+        for(var t=r1;t<r2;t++) px(cx+Math.cos(a)*t, cy+Math.sin(a)*t, "#FFE98A");
+      }
+      disc(cx,cy,9,"#FFC93D");
+      disc(cx,cy,7,"#FFD84D");
+      disc(cx-2,cy-2,3,"#FFF3A8");
+    },
+
+    clearNight: function(f,p){
+      for(var i=0;i<34;i++){
+        var sx = (R1[i]*64)|0, sy=(R2[i]*48)|0;
+        var tw = (f + (R3[i]*8|0)) % 8;
+        if (tw < 5) px(sx,sy, tw<2 ? "#FFFFFF" : "#B9C6EE");
+      }
+      var cx=40, cy=22;
+      disc(cx,cy,8,"#EDE7CE");
+      disc(cx-2,cy-2,2,"#D8D0AE");
+      disc(cx+3,cy+2,2,"#D8D0AE");
+      disc(cx-5,cy-4,7,p.sky[0]); // carve the crescent out of the sky itself
+    },
+
+    cloudyDay: function(f,p){
+      disc(26,21,8,"#FFC93D"); disc(26,21,6,"#FFD84D");
+      // the front cloud crosses the sun rather than sitting politely beside it
+      cloud(wrap(f*0.35, 96)-16|0, 22, 1, "#F4F8FB", "#A9BDCC");
+      cloud(wrap(f*0.2+52, 96)-16|0, 38, 1, "#E4EDF4", "#9AB0C1");
+    },
+
+    cloudyNight: function(f,p){
+      for(var i=0;i<18;i++){
+        var sx=(R1[i]*64)|0, sy=(R2[i]*30)|0;
+        if((f + (R3[i]*8|0))%8 < 5) px(sx,sy,"#C4CFF2");
+      }
+      disc(26,17,7,"#EDE7CE"); disc(22,14,6,p.sky[0]);
+      cloud(wrap(f*0.3, 96)-16|0, 20, 1, "#4E5A84", "#333D63");
+      cloud(wrap(f*0.18+52, 96)-16|0, 38, 1, "#3E4870", "#2A3355");
+    },
+
+    overcast: function(f,p){
+      cloud(wrap(f*0.5, 96)-16|0, 18, 1, "#E2E7EB", "#8B949D");
+      cloud(wrap(f*0.32+40, 96)-16|0, 29, 1, "#D2D9DF", "#7E8790");
+      cloud(wrap(f*0.2+72, 96)-16|0, 40, 1, "#C2CAD2", "#727B85");
+    },
+
+    fog: function(f,p){
+      var rows=[[13,.55],[22,.35],[31,.62],[40,.28],[48,.48]];
+      for(var r=0;r<rows.length;r++){
+        var y0=rows[r][0], sp=rows[r][1];
+        for(var y=y0;y<y0+5;y++){
+          for(var x=0;x<64;x++){
+            var v = (x + f*sp*(r%2?1:-1))|0;
+            if((BAYER[y&3][v&3]+0.5)/16 < 0.62) px(x,y,"#E8EAE6");
+          }
+        }
+      }
+    },
+
+    drizzle: function(f,p){ rainy(f,p,26,1,"#A9C8DC"); },
+    rain:    function(f,p){ rainy(f,p,54,3,"#C3DCEA"); },
+
+    snow: function(f,p){
+      cloud(20,15,1,"#EFF4F8","#AFBDC9");
+      cloud(46,19,1,"#E4ECF2","#A2B1BE");
+      for(var i=0;i<70;i++){
+        var x = (R1[i]*64 + Math.sin((f + i*9)/11)*3)|0;
+        var y = wrap(R2[i]*64 + f*0.85, 66)|0;
+        if (y > 20) px(x, y, i%4 ? "#FFFFFF" : "#DCE8F2");
+      }
+    },
+
+    thunder: function(f,p){
+      var flash = (f % 44);
+      if (flash === 0 || flash === 3){
+        ctx.fillStyle="#FFF6C8"; ctx.fillRect(0,0,64,64);
+      }
+      cloud(22,18,1,"#2E3346","#1A1E2B");
+      cloud(46,23,1,"#272B3C","#161A26");
+      if (flash >= 1 && flash <= 5){
+        var bolt=[[33,30],[29,40],[33,40],[27,52],[38,38],[33,38],[37,30]];
+        ctx.fillStyle="#FFE45C";
+        ctx.beginPath(); ctx.moveTo(bolt[0][0],bolt[0][1]);
+        for(var i=1;i<bolt.length;i++) ctx.lineTo(bolt[i][0],bolt[i][1]);
+        ctx.closePath(); ctx.fill();
+      }
+      for(var i=0;i<30;i++){
+        var x=(R1[i]*64)|0, y=wrap(R2[i]*64 + f*3.2, 70)|0;
+        if (y>30) { px(x,y,"#8FA0B4"); px(x,y+1,"#8FA0B4"); }
+      }
+    }
+  };
+
+  function rainy(f,p,count,len,col){
+    cloud(20,15,1,"#4C5966","#38434E");
+    cloud(46,20,1,"#43505C","#303945");
+    for(var i=0;i<count;i++){
+      var x = (R1[i]*64)|0;
+      var y = wrap(R2[i]*64 + f*(2.4+len*0.5), 72)|0;
+      if (y > 22){
+        for(var d=0;d<len;d++) px(x + (d*0.4|0), y+d, col);
+      }
+    }
+  }
+
+  /* ---------- render loop at a deliberate 8fps: GIF cadence, not 60fps polish ---------- */
+  var frame = 0, current = "clearDay", isNight = false;
+
+  function paint(){
+    var p = SCENES[current];
+    var lit = isNight || current === "thunder";
+    ctx.drawImage(skyLayer(p.sky), 0, 0);
+    if (current === "fog"){
+      // fog is the one condition that swallows the buildings rather than sitting behind them
+      skyline(p.ink, lit);
+      painters.fog(frame, p);
+    } else {
+      (painters[current] || painters.overcast)(frame, p);
+      skyline(p.ink, lit);
+    }
+  }
+
+  function applyTheme(key){
+    var p = SCENES[key];
+    var root = document.documentElement.style;
+    root.setProperty("--page", p.page);
+    root.setProperty("--accent", p.accent);
+  }
+
+  paint();
+  if (!reduce) setInterval(function(){ frame++; paint(); }, 125);
+
+  /* ---------- weather ---------- */
+  var useF = true, tempC = null;
+  var elTemp = document.getElementById("temp"),
+      elCond = document.getElementById("cond"),
+      elMeta = document.getElementById("meta");
+
+  function renderTemp(){
+    if (tempC === null) return;
+    var v = useF ? Math.round(tempC*9/5+32) : Math.round(tempC);
+    elTemp.textContent = v + "\u00B0";
+    elTemp.setAttribute("aria-label", v + " degrees " + (useF ? "Fahrenheit" : "Celsius") + ", click to switch units");
+  }
+  elTemp.addEventListener("click", function(){ useF = !useF; renderTemp(); });
+
+  function loadWeather(){
+    fetch("https://api.open-meteo.com/v1/forecast?latitude="+LAT+"&longitude="+LON+
+          "&current=temperature_2m,weather_code,is_day&timezone=America%2FNew_York")
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        var c = d.current;
+        tempC = c.temperature_2m;
+        renderTemp();
+        var info = decode(c.weather_code, c.is_day === 1);
+        isNight = c.is_day !== 1;
+        elCond.textContent = info.label;
+        elMeta.innerHTML = "BUSHWICK, BROOKLYN &middot; WMO " + c.weather_code +
+                           " &middot; " + (c.is_day === 1 ? "DAY" : "NIGHT");
+        current = info.scene;
+        applyTheme(current);
+        paint();
+      })
+      .catch(function(){
+        elCond.textContent = "no signal from the sky";
+        elTemp.textContent = "--\u00B0";
+      });
+  }
+  loadWeather();
+  setInterval(loadWeather, 10*60*1000);
+
+  /* ---------- NTS ---------- */
+  var elShow = document.getElementById("show"),
+      elUntil = document.getElementById("until");
+
+  function loadNTS(){
+    fetch("https://www.nts.live/api/v2/live")
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        var now = d.results[0].now;
+        var det = now.embeds && now.embeds.details;
+        elShow.textContent = (det && det.name) || now.broadcast_title || "NTS 1";
+        var end = new Date(now.end_timestamp);
+        elUntil.textContent = "ON AIR UNTIL " +
+          end.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"}).toUpperCase();
+      })
+      .catch(function(){
+        elShow.textContent = "NTS 1";
+        elUntil.textContent = "SCHEDULE UNAVAILABLE";
+      });
+  }
+  loadNTS();
+  setInterval(loadNTS, 60*1000);
+
+  /* ---------- the radio ---------- */
+  var audio = document.getElementById("audio"),
+      play  = document.getElementById("play");
+
+  function setBtn(state, text){
+    play.dataset.state = state;
+    play.innerHTML = text;
+  }
+
+  play.addEventListener("click", function(){
+    if (play.dataset.state === "on"){
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+      setBtn("off", "&#9654; PLAY");
+      play.setAttribute("aria-label", "Play NTS 1");
+      return;
+    }
+    setBtn("loading", "&hellip;");
+    // cache-bust so a re-press rejoins the live edge instead of a stalled buffer
+    audio.src = STREAM + "?t=" + Date.now();
+    audio.play().then(function(){
+      setBtn("on", "&#9646;&#9646; STOP");
+      play.setAttribute("aria-label", "Stop NTS 1");
+      loadNTS();
+    }).catch(function(){
+      setBtn("off", "&#9654; PLAY");
+      elUntil.textContent = "STREAM WOULD NOT START — TRY AGAIN";
+    });
+  });
+
+  audio.addEventListener("error", function(){
+    if (audio.getAttribute("src")){
+      setBtn("off", "&#9654; PLAY");
+      elUntil.textContent = "STREAM DROPPED — PRESS PLAY";
+    }
+  });
+})();
+</script>
+
+</body>
+</html>
