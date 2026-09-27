@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Utrecht Weather Radio v14: own news proxy (optional) -->
+<!-- Utrecht Weather Radio v15 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -973,8 +973,8 @@
     }, 45);
   }
 
-  function applyTheme(key){
-    var p = scenePalette(key);
+  function applyTheme(key, raw){
+    var p = raw ? SCENES[key] : scenePalette(key);
     var root = document.documentElement.style;
     root.setProperty("--page", p.page);
     root.setProperty("--accent", p.accent);
@@ -1039,7 +1039,7 @@
     function next(){
       if (i < CARDS.length){
         var c = CARDS[i++];
-        applyTheme(c.scene);
+        applyTheme(c.scene, true);   // the card uses the raw palettes, untouched by twilight
         elCard.className = "show" + (c.inv ? " inv" : "");
         elCard.innerHTML = c.html;
         fitWords();
