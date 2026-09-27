@@ -28,5 +28,9 @@ jobs:
             echo "no change"
           else
             git commit -m "data: $(date -u +%Y-%m-%dT%H:%MZ)"
-            git push
+            # someone (a person, or an overlapping run) may have pushed meanwhile
+            for i in 1 2 3; do
+              git push && break
+              git pull --rebase -X theirs origin main || exit 1
+            done
           fi
