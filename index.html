@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Bushwick Weather Radio</title>
+<title>Utrecht Weather Radio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=DotGothic16&display=swap">
@@ -176,14 +176,14 @@
 <body>
 
 <main>
-  <canvas id="sky" width="64" height="64" role="img" aria-label="Pixel animation of current Bushwick weather"></canvas>
+  <canvas id="sky" width="64" height="64" role="img" aria-label="Pixel animation of current Utrecht weather"></canvas>
 
   <div class="readout">
     <button class="temp" id="temp" title="Click to switch units">--&deg;</button>
     <div class="cond" id="cond">reading the sky</div>
   </div>
 
-  <div class="meta" id="meta">BUSHWICK, BROOKLYN &middot; 40.694 N 73.921 W</div>
+  <div class="meta" id="meta">UTRECHT, NETHERLANDS &middot; 52.091 N 5.121 E</div>
 
   <hr>
 
@@ -203,7 +203,7 @@
 (function(){
   "use strict";
 
-  var LAT = 40.6944, LON = -73.9213;
+  var LAT = 52.0907, LON = 5.1214;
   var STREAM = "https://stream-relay-geo.ntslive.net/stream";
   var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -459,7 +459,7 @@
   if (!reduce) setInterval(function(){ frame++; paint(); }, 125);
 
   /* ---------- weather ---------- */
-  var useF = true, tempC = null;
+  var useF = false, tempC = null;
   var elTemp = document.getElementById("temp"),
       elCond = document.getElementById("cond"),
       elMeta = document.getElementById("meta");
@@ -474,7 +474,7 @@
 
   function loadWeather(){
     fetch("https://api.open-meteo.com/v1/forecast?latitude="+LAT+"&longitude="+LON+
-          "&current=temperature_2m,weather_code,is_day&timezone=America%2FNew_York")
+          "&current=temperature_2m,weather_code,is_day&timezone=Europe%2FAmsterdam")
       .then(function(r){ return r.json(); })
       .then(function(d){
         var c = d.current;
@@ -483,7 +483,7 @@
         var info = decode(c.weather_code, c.is_day === 1);
         isNight = c.is_day !== 1;
         elCond.textContent = info.label;
-        elMeta.innerHTML = "BUSHWICK, BROOKLYN &middot; WMO " + c.weather_code +
+        elMeta.innerHTML = "UTRECHT, NETHERLANDS &middot; WMO " + c.weather_code +
                            " &middot; " + (c.is_day === 1 ? "DAY" : "NIGHT");
         current = info.scene;
         applyTheme(current);
