@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Utrecht Weather Radio v13: wind flag, chimney smoke -->
+<!-- Utrecht Weather Radio v14: own news proxy (optional) -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -1299,12 +1299,15 @@
   var elNews   = document.getElementById("news"),
       elTag    = document.getElementById("newsTag"),
       elTicker = document.getElementById("tickerInner");
-  var FEEDS = {
-    en: "https://api.rss2json.com/v1/api.json?rss_url=" +
-        encodeURIComponent("https://www.dutchnews.nl/feed/"),
-    nl: "https://api.rss2json.com/v1/api.json?rss_url=" +
-        encodeURIComponent("https://www.rtvutrecht.nl/rss/nieuws.xml")
-  };
+  // Your own proxy (see worker/README.md). Leave empty to use rss2json only.
+  var NEWS_PROXY = "";
+  var RSS = { en: "https://www.dutchnews.nl/feed/", nl: "https://www.rtvutrecht.nl/rss/nieuws.xml" };
+  function feedUrls(lang){
+    var urls = [];
+    if (NEWS_PROXY) urls.push(NEWS_PROXY.replace(/\/$/, "") + "/?feed=" + lang);
+    urls.push("https://api.rss2json.com/v1/api.json?rss_url=" + encodeURIComponent(RSS[lang]));
+    return urls;
+  }
   var newsLang = "en", newsCache = { en: null, nl: null };
 
   function esc(s){
@@ -1344,15 +1347,20 @@
   }
 
   function loadFeed(lang){
-    fetch(FEEDS[lang])
-      .then(function(r){ if(!r.ok) throw 0; return r.json(); })
-      .then(function(d){
-        var items = (d.items || []).slice(0, 10);
-        if(d.status !== "ok" || !items.length) throw 0;
-        newsCache[lang] = items;
-        renderNews();
-      })
-      .catch(function(){ renderNews(); });
+    var urls = feedUrls(lang), i = 0;
+    function attempt(){
+      if (i >= urls.length){ renderNews(); return; }
+      fetch(urls[i++])
+        .then(function(r){ if(!r.ok) throw 0; return r.json(); })
+        .then(function(d){
+          var items = (d.items || []).slice(0, 10);
+          if(d.status !== "ok" || !items.length) throw 0;
+          newsCache[lang] = items;
+          renderNews();
+        })
+        .catch(attempt);   // next source
+    }
+    attempt();
   }
 
   function loadNews(){ loadFeed("en"); loadFeed("nl"); }
