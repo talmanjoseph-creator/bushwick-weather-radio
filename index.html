@@ -350,7 +350,7 @@
   /* ---------- the scenes ---------- */
   var painters = {
     clearDay: function(f,p){
-      var cx=32, cy=27;
+      var cx=35, cy=27;
       for(var i=0;i<8;i++){
         var a = i*Math.PI/4 + f*0.05;
         var r1 = 11 + (f%2), r2 = 15 + (f%2);
@@ -375,7 +375,7 @@
     },
 
     cloudyDay: function(f,p){
-      disc(26,21,8,"#FFC93D"); disc(26,21,6,"#FFD84D");
+      disc(31,21,8,"#FFC93D"); disc(31,21,6,"#FFD84D");
       // the front cloud crosses the sun rather than sitting politely beside it
       cloud(wrap(f*0.35, 96)-16|0, 22, 1, "#F4F8FB", "#A9BDCC");
       cloud(wrap(f*0.2+52, 96)-16|0, 38, 1, "#E4EDF4", "#9AB0C1");
