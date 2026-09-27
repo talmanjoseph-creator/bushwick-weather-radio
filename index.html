@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Utrecht Weather Radio v22: the last 24 hours as skies -->
+<!-- Utrecht Weather Radio v23: sound -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -228,6 +228,16 @@
     color:var(--dim);
   }
 
+  /* --- sound toggle --- */
+  .soundtag{
+    font-family:var(--mono); font-size:9px; letter-spacing:.14em;
+    color:var(--dim); background:none; border:1px dotted var(--line);
+    padding:5px 8px 4px; cursor:pointer; margin-top:4px;
+  }
+  .soundtag[data-on="1"]{ color:var(--accent); border-color:var(--accent); border-style:solid; }
+  .intro .soundtag{ opacity:0; }
+  .soundtag{ transition:opacity .35s steps(4,end), color 1.2s ease, border-color 1.2s ease; }
+
   /* --- radio pulse: the page breathes while a channel is playing --- */
   body.playing{ animation:breathe 4s ease-in-out infinite; }
   @keyframes breathe{
@@ -328,6 +338,8 @@
       </div>
     </div>
   </div>
+
+  <button class="soundtag" id="soundTag" data-on="0" aria-pressed="false">&#9834; SOUND OFF</button>
 </main>
 
 <audio id="audio" preload="none"></audio>
@@ -702,6 +714,7 @@
     var birds = [];
     for (var i=0;i<n;i++) birds.push({ dx: -i*3*dir, dy: (i%2 ? 2 : -1)*Math.ceil(i/2), ph: i*2 });
     flock = { dir:dir, x:x, y:y, v:0.55 + Math.random()*0.3, birds:birds, perch:wantsPerch };
+    if (n > 1) SFX.chirp();
   }
   function drawBird(x, y, up, col){
     ctx.fillStyle = col;
@@ -757,6 +770,7 @@
       return;
     }
     var t = train, x0 = t.x|0;
+    if (x0 > -t.len && x0 < 64 && (frame & 3) === 0) SFX.clack();
     ctx.fillStyle = "#FFC917"; ctx.fillRect(x0, 60, t.len, 2);
     ctx.fillStyle = "#003082"; ctx.fillRect(x0, 62, t.len, 1);
     ctx.fillStyle = lit ? "#FFF3A8" : "#1B262F";
@@ -892,7 +906,7 @@
     if (intro.on || carding || reduce) return;
     trans = null;
     if (override){ clearTimeout(overrideTimer); override = null; if (metaSaved !== null){ elMeta.innerHTML = metaSaved; metaSaved = null; } current = realSceneNow(); }
-    intro.on = true; intro.t = 0; intro.cStart = null; intro.weatherAt = 0; intro.done = false;
+    intro.on = true; intro.t = 0; intro.cStart = null; intro.weatherAt = 0; intro.done = false; intro.hummed = false; intro.ticked = 0;
     document.body.classList.add("intro");
     runCard(runIntro);
   }
@@ -946,6 +960,9 @@
     var t = intro.t;
     var rows   = Math.min(64, Math.floor(ease(t / 0.8) * 64));
     var towerF = ease((t - 0.5) / 0.7);
+    if (!intro.hummed && rows > 0){ intro.hummed = true; SFX.hum(); }
+    var tickN = Math.floor(towerF * 6);
+    if (tickN > (intro.ticked || 0) && towerF < 1){ intro.ticked = tickN; SFX.tick(tickN); }
     var roofF  = ease((t - 0.7) / 0.8);
     if (intro.cStart === null && t >= 1.6 && (intro.weatherAt !== null || t >= 4.5)) intro.cStart = t;
     var c = intro.cStart === null ? 0 : ease((t - intro.cStart) / 0.9);
@@ -1001,7 +1018,8 @@
       i++;
       n = Math.round(target * ease(i / 12));
       elTemp.textContent = n + "\u00B0";
-      if (i >= 12){ clearInterval(countTimer); renderTemp(); }
+      SFX.count(i);
+      if (i >= 12){ clearInterval(countTimer); renderTemp(); SFX.chime(); }
     }, 55);
     typeCond();
   }
@@ -1051,6 +1069,65 @@
     document.documentElement.style.setProperty("--page", driftColor(scenePalette(current).page));
   }
   setInterval(drift, 8000);
+
+  /* ---------- sound: small chip noises made in code, off until you say so ---------- */
+  var AC = null, soundOn = false, elSound = document.getElementById("soundTag");
+  try { soundOn = localStorage.getItem("uwr:sound") === "1"; } catch(e){}
+  function showSound(){
+    elSound.dataset.on = soundOn ? "1" : "0";
+    elSound.setAttribute("aria-pressed", soundOn ? "true" : "false");
+    elSound.innerHTML = "&#9834; SOUND " + (soundOn ? "ON" : "OFF");
+  }
+  showSound();
+  function ac(){
+    if (!soundOn) return null;
+    if (!AC){ var C = window.AudioContext || window.webkitAudioContext; if (!C) return null; AC = new C(); }
+    if (AC.state === "suspended") AC.resume();
+    return AC;
+  }
+  function tone(freq, dur, type, gain, sweepTo, delay){
+    var a = ac(); if (!a) return;
+    var t0 = a.currentTime + (delay || 0), o = a.createOscillator(), g = a.createGain();
+    o.type = type || "square";
+    o.frequency.setValueAtTime(freq, t0);
+    if (sweepTo) o.frequency.exponentialRampToValueAtTime(sweepTo, t0 + dur);
+    g.gain.setValueAtTime(gain || 0.06, t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g).connect(a.destination);
+    o.start(t0); o.stop(t0 + dur + 0.02);
+  }
+  var noiseBuf = null;
+  function noise(dur, gain, hz, q, delay){
+    var a = ac(); if (!a) return;
+    if (!noiseBuf){
+      noiseBuf = a.createBuffer(1, a.sampleRate, a.sampleRate);
+      var d = noiseBuf.getChannelData(0);
+      for (var i=0;i<d.length;i++) d[i] = Math.random()*2 - 1;
+    }
+    var t0 = a.currentTime + (delay || 0), src = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
+    src.buffer = noiseBuf; f.type = "bandpass"; f.frequency.value = hz || 1500; f.Q.value = q || 1;
+    g.gain.setValueAtTime(gain || 0.1, t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(f).connect(g).connect(a.destination);
+    src.start(t0); src.stop(t0 + dur + 0.02);
+  }
+  var SFX = {
+    cut:   function(i, inv){ noise(0.04, 0.10, inv ? 3200 : 1600, 2); tone(inv ? 660 : 330 * Math.pow(2, (i % 5)/12), 0.05, "square", 0.05); },
+    thud:  function(){ tone(70, 0.4, "sine", 0.3, 40); noise(0.12, 0.08, 120, 0.7); },
+    hum:   function(){ tone(55, 0.9, "sawtooth", 0.04, 110); },
+    tick:  function(n){ tone(900 + n*60, 0.03, "square", 0.04); },
+    count: function(n){ tone(500 + n*12, 0.02, "square", 0.03); },
+    chime: function(){ tone(880, 0.5, "sine", 0.10); tone(1320, 0.6, "sine", 0.07, 0, 0.09); },
+    clack: function(){ noise(0.02, 0.05, 700, 3); },
+    chirp: function(){ tone(2200, 0.07, "sine", 0.04, 3300); tone(2600, 0.06, "sine", 0.03, 3600, 0.11); },
+    on:    function(){ tone(660, 0.08, "square", 0.05); tone(990, 0.12, "square", 0.05, 0, 0.09); }
+  };
+  elSound.addEventListener("click", function(){
+    soundOn = !soundOn;
+    try { localStorage.setItem("uwr:sound", soundOn ? "1" : "0"); } catch(e){}
+    showSound();
+    if (soundOn){ ac(); SFX.on(); }
+  });
 
   /* ---------- title card ----------
      Six hard cuts at 3/s (under the flash-safety line), each a different
@@ -1112,12 +1189,14 @@
       if (i < CARDS.length){
         var c = CARDS[i++];
         applyTheme(c.scene, true);   // the card uses the raw palettes, untouched by twilight
+        SFX.cut(i, c.inv);
         elCard.className = "show" + (c.inv ? " inv" : "");
         elCard.innerHTML = c.html;
         fitWords();
         setTimeout(next, CUT * c.h);
       } else {
         // the beat of black
+        SFX.thud();
         elCard.className = "show black";
         elCard.innerHTML = "";
         applyTheme(current);
