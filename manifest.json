@@ -1,0 +1,15 @@
+{
+  "name": "Weather Radio",
+  "short_name": "Weather Radio",
+  "description": "Utrecht and New York weather as a pixel scene, NTS Radio live, and the day's headlines.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#080D1C",
+  "theme_color": "#080D1C",
+  "icons": [
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

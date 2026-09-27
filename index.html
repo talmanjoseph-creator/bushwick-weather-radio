@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Weather Radio v29: postcards -->
+<!-- Weather Radio v30: manifest, self-refresh -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -9,6 +9,10 @@
 <meta name="theme-color" content="#080D1C">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Weather Radio">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Utrecht / New York Weather Radio">
 <meta property="og:description" content="Utrecht and New York weather as a pixel scene, NTS Radio live, and the day's headlines.">
@@ -1976,6 +1980,24 @@
   setInterval(loadNews, 15*60*1000);
 
   showCity();
+
+  /* ---------- stay current: if a newer version is on the server, reload next time you come back ---------- */
+  var VERSION = (document.documentElement.previousSibling && document.documentElement.previousSibling.nodeValue || "").match(/v(\d+)/);
+  VERSION = VERSION ? +VERSION[1] : 0;
+  var newer = false;
+  function checkVersion(){
+    fetch(location.pathname + "?v=" + (Date.now()/60000|0), { cache:"no-store" })
+      .then(function(r){ return r.text(); })
+      .then(function(html){
+        var m = html.match(/<!-- Weather Radio v(\d+)/);
+        if (m && +m[1] > VERSION) newer = true;
+      }).catch(function(){});
+  }
+  setTimeout(checkVersion, 60*1000);
+  setInterval(checkVersion, 10*60*1000);
+  document.addEventListener("visibilitychange", function(){
+    if (document.visibilityState === "visible" && newer && !playingCh) location.reload();
+  });
 })();
 </script>
 
