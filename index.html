@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Utrecht Weather Radio v8: birds, clock, train -->
+<!-- Utrecht Weather Radio v9: title card -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -216,6 +216,31 @@
     color:var(--dim);
   }
 
+  /* --- title card: hard cuts, the site's own palettes, then black --- */
+  body.cut{ transition:none !important; }
+  #card{
+    position:fixed; inset:0; z-index:10;
+    display:none; align-items:center; justify-content:center;
+    background:var(--page); color:var(--accent);
+    text-align:center; padding:24px; overflow:hidden;
+    -webkit-font-smoothing:none;
+  }
+  #card.show{ display:flex; }
+  #card.inv{ background:var(--accent); color:var(--page); }
+  #card .w{
+    display:block; line-height:.92; letter-spacing:-.03em;
+    white-space:nowrap;
+  }
+  #card .w.mono{ font-family:var(--mono); font-weight:700; }
+  #card .w.dg{ font-family:var(--dot); }
+  /* .fit words are sized by measurement at show time so they span the width */
+  #card .w.fit{ font-size:100px; }
+  #card .w.md{ font-size:clamp(22px, 7vw, 48px); letter-spacing:.08em; }
+  #card .w.sm{ font-size:clamp(11px, 3.2vw, 16px); letter-spacing:.3em; }
+  #card .w.tl{ position:absolute; top:18px; left:18px; text-align:left; }
+  #card .w.br{ position:absolute; bottom:18px; right:18px; text-align:right; }
+  #card.black{ background:#000; }
+
   /* --- title sequence: chrome waits offstage until the scene has drawn --- */
   .intro .readout, .intro .meta, .intro hr, .intro .channels, .intro .news{
     opacity:0;
@@ -235,6 +260,8 @@
 </style>
 </head>
 <body class="intro">
+
+<div id="card" aria-hidden="true"></div>
 
 <main>
   <div class="news" id="news" hidden>
@@ -748,7 +775,70 @@
     root.setProperty("--accent", p.accent);
   }
 
-  if (intro.on) runIntro(); else { document.body.classList.remove("intro"); paint(); }
+  /* ---------- title card ----------
+     Six hard cuts at 3/s (under the flash-safety line), each a different
+     composition in the site's own fonts and palettes, then a beat of black,
+     then the sky starts to dither in. */
+  var CARDS = [
+    { html:'<span class="w mono fit">UTRECHT</span>',              scene:"clearDay" },
+    { html:'<span class="w dg fit">NEWS</span>',                    scene:"thunder",     inv:true },
+    { html:'<span class="w mono sm tl">52.0907 N</span><span class="w mono md">AND</span><span class="w mono sm br">5.1214 E</span>', scene:"rain" },
+    { html:'<span class="w dg fit">WEATHER</span>',               scene:"clearNight",  inv:true },
+    { html:'<span class="w mono md">NTS 1 &middot; NTS 2</span><span class="w mono sm br">LIVE FROM LONDON</span>', scene:"snow" },
+    { html:'<span class="w dg fit">RADIO</span>',                   scene:"fog",         inv:true }
+  ];
+  var elCard = document.getElementById("card"), carding = false;
+  // size each .fit word to 88% of the viewport width, whatever font it landed in
+  function fitWords(){
+    var ws = elCard.querySelectorAll(".w.fit"), avail = window.innerWidth * 0.88;
+    for (var i=0;i<ws.length;i++){
+      ws[i].style.fontSize = "100px";
+      var w = ws[i].getBoundingClientRect().width || 1;
+      ws[i].style.fontSize = Math.min(220, 100 * avail / w) + "px";
+    }
+  }
+  function runCard(then){
+    var i = 0, CUT = 330;
+    carding = true;
+    document.body.classList.add("cut");
+    elCard.classList.add("show");
+    function next(){
+      if (i < CARDS.length){
+        var c = CARDS[i++];
+        applyTheme(c.scene);
+        elCard.className = "show" + (c.inv ? " inv" : "");
+        elCard.innerHTML = c.html;
+        fitWords();
+        setTimeout(next, CUT);
+      } else {
+        // the beat of black
+        elCard.className = "show black";
+        elCard.innerHTML = "";
+        applyTheme(current);
+        setTimeout(function(){
+          elCard.className = "";
+          document.body.classList.remove("cut");
+          carding = false;
+          then();
+        }, 260);
+      }
+    }
+    next();
+  }
+
+  if (intro.on){
+    var started = false;
+    function go(){ if (!started){ started = true; runCard(runIntro); } }
+    if (document.fonts && document.fonts.load){
+      // Google Fonts splits these by script; ask for the Latin pieces by name
+      Promise.all([
+        document.fonts.load("700 100px Silkscreen", "UTRECHT NTS AND 0123456789.NE"),
+        document.fonts.load("100px DotGothic16", "NEWS WEATHER RADIO")
+      ]).then(go, go);
+      document.fonts.addEventListener && document.fonts.addEventListener("loadingdone", function(){ if (carding) fitWords(); });
+    }
+    setTimeout(go, 1500);
+  } else { document.body.classList.remove("intro"); paint(); }
   setInterval(function(){ frame++; if (!intro.on && !reduce) paint(); else if (reduce && !frame) paint(); }, 125);
 
   /* ---------- weather ---------- */
@@ -784,7 +874,7 @@
         elMeta.innerHTML = "UTRECHT, NETHERLANDS &middot; WMO " + c.weather_code +
                            " &middot; " + (c.is_day === 1 ? "DAY" : "NIGHT");
         current = info.scene;
-        applyTheme(current);
+        if (!carding) applyTheme(current);
         paint();
         updateMediaSession();
       })
