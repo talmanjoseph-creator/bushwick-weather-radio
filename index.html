@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Weather Radio v26: tomorrow -->
+<!-- Weather Radio v27: aurora -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -900,6 +900,36 @@
   /* ---------- render loop at a deliberate 8fps: GIF cadence, not 60fps polish ---------- */
   var frame = 0, current = "clearDay", isNight = false;
 
+  /* ---------- aurora: only when NOAA says the sky is actually doing it ---------- */
+  var kpNow = 0, KP_NEEDED = { utrecht: 6, nyc: 7 };
+  function auroraOn(key){
+    if (location.hash === "#aurora") return key === "clearNight" || key === "cloudyNight";
+    return (key === "clearNight" || key === "cloudyNight") && kpNow >= (KP_NEEDED[city.key] || 7);
+  }
+  function aurora(){
+    // slow curtains: two sine bands drifting at different speeds, dithered into the sky
+    var strength = Math.min(1, 0.5 + (kpNow - 5) * 0.12);
+    if (location.hash === "#aurora") strength = 0.9;
+    for (var x=0;x<64;x++){
+      var top = 4 + 4*Math.sin(x/9 + frame/70), h = 14 + 9*Math.sin(x/6 + frame/45) + 5*Math.sin(x/2.5 - frame/30);
+      for (var y=Math.round(top); y<top+h && y<40; y++){
+        var d = (y - top)/h;                       // 0 at the top of the curtain, 1 at the bottom
+        var a = strength * (0.15 + 0.85*Math.sin(d*Math.PI)) * (0.6 + 0.4*Math.sin(x/4 + frame/12));
+        if ((BAYER[y&3][x&3] + 0.5)/16 < a*0.75){
+          ctx.fillStyle = d < 0.3 ? "#B478E6" : (d < 0.8 ? "#4EE39A" : "#2FB57A");
+          ctx.fillRect(x, y, 1, 1);
+        }
+      }
+    }
+  }
+  function loadKp(){
+    fetch("kp.json?t=" + (Date.now()/60000|0))
+      .then(function(r){ if (!r.ok) throw 0; return r.json(); })
+      .then(function(d){ kpNow = Math.max(d.kp || 0, 0); })
+      .catch(function(){});
+  }
+  loadKp(); setInterval(loadKp, 15*60*1000);
+
   /* ---------- one scene, steady state, onto any 64x64 canvas ---------- */
   function drawScene(key, target){
     var saved = ctx;
@@ -907,6 +937,7 @@
     ctx.imageSmoothingEnabled = false;
     var p = scenePalette(key), lit = isNight || key === "thunder";
     ctx.drawImage(skyLayer(p.sky), 0, 0);
+    if (auroraOn(key)) aurora();
     if (key === "fog"){
       // fog is the one condition that swallows the buildings rather than sitting behind them
       skyline(p.ink, lit);

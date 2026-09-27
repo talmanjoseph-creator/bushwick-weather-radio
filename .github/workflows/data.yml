@@ -16,6 +16,7 @@ jobs:
           node-version: 22
       - run: node scripts/fetch-news.mjs
       - run: node scripts/fetch-weather.mjs
+      - run: node scripts/fetch-kp.mjs
       - name: commit what changed
         run: |
           git config user.name "data-bot"
@@ -23,9 +24,9 @@ jobs:
           # news: only when a headline changed, not just the timestamp
           for f in news-*.json; do git diff --quiet -I '"updated"' -- "$f" || git add "$f"; done
           # weather and history: whenever the file changed
-          for f in weather-*.json history-*.json; do git diff --quiet -- "$f" || git add "$f"; done
+          for f in weather-*.json history-*.json kp.json; do git diff --quiet -- "$f" || git add "$f"; done
           git add -N . >/dev/null 2>&1 || true
-          git add news-*.json weather-*.json history-*.json 2>/dev/null || true
+          git add news-*.json weather-*.json history-*.json kp.json 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "no change"
           else
