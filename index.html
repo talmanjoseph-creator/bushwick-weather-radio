@@ -99,6 +99,12 @@
   }
 
   /* --- radio --- */
+  .channels{
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+    margin:18px 0 6px;
+  }
   .radio{
     display:flex;
     align-items:flex-start;
@@ -187,12 +193,22 @@
 
   <hr>
 
-  <div class="radio">
-    <button class="play" id="play" data-state="off" aria-label="Play NTS 1">&#9654; PLAY</button>
-    <div class="nts">
-      <div class="chan">NTS 1 <span class="dot beat" id="dot"></span> LIVE FROM LONDON</div>
-      <div class="show" id="show" aria-live="polite">connecting&hellip;</div>
-      <div class="until" id="until"></div>
+  <div class="channels">
+    <div class="radio">
+      <button class="play" id="play1" data-state="off" data-ch="1" aria-label="Play NTS 1">&#9654; PLAY</button>
+      <div class="nts">
+        <div class="chan">NTS 1 <span class="dot beat"></span> LIVE FROM LONDON</div>
+        <div class="show" id="show1" aria-live="polite">connecting&hellip;</div>
+        <div class="until" id="until1"></div>
+      </div>
+    </div>
+    <div class="radio">
+      <button class="play" id="play2" data-state="off" data-ch="2" aria-label="Play NTS 2">&#9654; PLAY</button>
+      <div class="nts">
+        <div class="chan">NTS 2 <span class="dot beat"></span> LIVE FROM LONDON</div>
+        <div class="show" id="show2" aria-live="polite">connecting&hellip;</div>
+        <div class="until" id="until2"></div>
+      </div>
     </div>
   </div>
 </main>
@@ -204,7 +220,6 @@
   "use strict";
 
   var LAT = 52.0907, LON = 5.1214;
-  var STREAM = "https://stream-relay-geo.ntslive.net/stream";
   var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   /* ---------- palettes: each scene is its own small closed world ---------- */
@@ -300,20 +315,30 @@
 
   function wrap(v,max){ v%=max; return v<0?v+max:v; }
 
-  /* The horizon is a Bushwick horizon: flat low-rise roofs and one wooden
-     water tower, which is the only skyline element anyone here would draw. */
-  var BUILDINGS=[[0,9,54],[9,7,51],[16,11,56],[27,8,50],[35,6,53],[41,10,55],[51,7,52],[58,6,57]];
-  var WINDOWS=[[2,57],[5,60],[11,54],[18,59],[22,58],[29,53],[37,56],[44,58],[47,60],[53,55],[60,60]];
+  /* The horizon is a Utrecht horizon: canal-house roofs with a couple of
+     stepped gables, under the Dom Tower, which is the only skyline element
+     anyone here would draw. */
+  var BUILDINGS=[[0,8,54],[8,8,52],[16,8,55],[24,6,51],[30,6,54],[36,8,53],[44,7,55],[51,6,52],[57,7,54]];
+  var WINDOWS=[[2,57],[5,60],[10,55],[13,58],[18,58],[21,60],[26,54],[32,57],[38,56],[41,59],[46,58],[53,55],[59,57]];
 
   function skyline(ink, lit){
+    ctx.fillStyle = ink;
+    /* Dom Tower rises behind the rooftops */
+    ctx.fillRect(12,24,5,34);   // shaft
+    ctx.fillRect(11,22,7,3);    // crown, stepping in
+    ctx.fillRect(12,20,5,2);
+    ctx.fillRect(13,18,3,2);
+    ctx.fillRect(14,14,1,4);    // spire
+    ctx.fillStyle = lit ? "#FFD98A" : "#F2EFE6";
+    ctx.fillRect(13,27,2,2);    // clock face, glows at night
+    /* canal-house roofline */
     ctx.fillStyle = ink;
     for(var i=0;i<BUILDINGS.length;i++){
       var b=BUILDINGS[i];
       ctx.fillRect(b[0], b[2], b[1], 64-b[2]);
     }
-    ctx.fillRect(29,43,6,6);                          // tank
-    ctx.fillRect(30,41,4,2);                          // conical cap, flattened
-    ctx.fillRect(29,49,1,2); ctx.fillRect(34,49,1,2); // legs
+    ctx.fillRect(9,50,6,2);     // stepped gables
+    ctx.fillRect(45,53,5,2);
     if (lit){
       ctx.fillStyle = "#FFD98A";
       for(var j=0;j<WINDOWS.length;j++){
@@ -498,63 +523,92 @@
   setInterval(loadWeather, 10*60*1000);
 
   /* ---------- NTS ---------- */
-  var elShow = document.getElementById("show"),
-      elUntil = document.getElementById("until");
+  function chEls(ch){
+    return {
+      show:  document.getElementById("show" + ch),
+      until: document.getElementById("until" + ch),
+      play:  document.getElementById("play" + ch)
+    };
+  }
 
   function loadNTS(){
     fetch("https://www.nts.live/api/v2/live")
       .then(function(r){ return r.json(); })
       .then(function(d){
-        var now = d.results[0].now;
-        var det = now.embeds && now.embeds.details;
-        elShow.textContent = (det && det.name) || now.broadcast_title || "NTS 1";
-        var end = new Date(now.end_timestamp);
-        elUntil.textContent = "ON AIR UNTIL " +
-          end.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"}).toUpperCase();
+        [1, 2].forEach(function(ch){
+          var el = chEls(ch),
+              res = d.results && d.results[ch-1],
+              now = res && res.now;
+          if(!now){
+            el.show.textContent = "NTS " + ch;
+            el.until.textContent = "SCHEDULE UNAVAILABLE";
+            return;
+          }
+          var det = now.embeds && now.embeds.details;
+          el.show.textContent = (det && det.name) || now.broadcast_title || ("NTS " + ch);
+          var end = new Date(now.end_timestamp);
+          el.until.textContent = "ON AIR UNTIL " +
+            end.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"}).toUpperCase();
+        });
       })
       .catch(function(){
-        elShow.textContent = "NTS 1";
-        elUntil.textContent = "SCHEDULE UNAVAILABLE";
+        [1, 2].forEach(function(ch){
+          var el = chEls(ch);
+          el.show.textContent = "NTS " + ch;
+          el.until.textContent = "SCHEDULE UNAVAILABLE";
+        });
       });
   }
   loadNTS();
   setInterval(loadNTS, 60*1000);
 
   /* ---------- the radio ---------- */
+  var STREAMS = {
+    1: "https://stream-relay-geo.ntslive.net/stream",
+    2: "https://stream-relay-geo.ntslive.net/stream2"
+  };
   var audio = document.getElementById("audio"),
-      play  = document.getElementById("play");
+      playingCh = 0;
 
-  function setBtn(state, text){
-    play.dataset.state = state;
-    play.innerHTML = text;
+  function setBtn(ch, state, text){
+    var btn = chEls(ch).play;
+    btn.dataset.state = state;
+    btn.innerHTML = text;
+    btn.setAttribute("aria-label", (state === "on" ? "Stop NTS " : "Play NTS ") + ch);
   }
 
-  play.addEventListener("click", function(){
-    if (play.dataset.state === "on"){
-      audio.pause();
-      audio.removeAttribute("src");
-      audio.load();
-      setBtn("off", "&#9654; PLAY");
-      play.setAttribute("aria-label", "Play NTS 1");
-      return;
-    }
-    setBtn("loading", "&hellip;");
-    // cache-bust so a re-press rejoins the live edge instead of a stalled buffer
-    audio.src = STREAM + "?t=" + Date.now();
-    audio.play().then(function(){
-      setBtn("on", "&#9646;&#9646; STOP");
-      play.setAttribute("aria-label", "Stop NTS 1");
-      loadNTS();
-    }).catch(function(){
-      setBtn("off", "&#9654; PLAY");
-      elUntil.textContent = "STREAM WOULD NOT START — TRY AGAIN";
+  function stopStream(){
+    audio.pause();
+    audio.removeAttribute("src");
+    audio.load();
+    if (playingCh) setBtn(playingCh, "off", "&#9654; PLAY");
+    playingCh = 0;
+  }
+
+  [1, 2].forEach(function(ch){
+    chEls(ch).play.addEventListener("click", function(){
+      if (playingCh === ch){ stopStream(); return; }
+      stopStream();
+      var el = chEls(ch);
+      setBtn(ch, "loading", "&hellip;");
+      // cache-bust so a re-press rejoins the live edge instead of a stalled buffer
+      audio.src = STREAMS[ch] + "?t=" + Date.now();
+      audio.play().then(function(){
+        playingCh = ch;
+        setBtn(ch, "on", "&#9646;&#9646; STOP");
+        loadNTS();
+      }).catch(function(){
+        setBtn(ch, "off", "&#9654; PLAY");
+        el.until.textContent = "STREAM WOULD NOT START — TRY AGAIN";
+      });
     });
   });
 
   audio.addEventListener("error", function(){
-    if (audio.getAttribute("src")){
-      setBtn("off", "&#9654; PLAY");
-      elUntil.textContent = "STREAM DROPPED — PRESS PLAY";
+    if (audio.getAttribute("src") && playingCh){
+      var ch = playingCh;
+      stopStream();
+      chEls(ch).until.textContent = "STREAM DROPPED — PRESS PLAY";
     }
   });
 })();
