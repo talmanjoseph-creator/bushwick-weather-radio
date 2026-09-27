@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Utrecht Weather Radio v12: transitions, scrub, replay, radio pulse -->
+<!-- Utrecht Weather Radio v13: wind flag, chimney smoke -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -502,6 +502,44 @@
       }
     }
     ctx.restore();
+    if (roofF >= 1) flagAndSmoke(ink);
+  }
+
+  /* ---------- a flag that knows the wind, a chimney that knows the cold ---------- */
+  var FLAG = ["#AE1C28", "#FFFFFF", "#21468B"];
+  function flagAndSmoke(ink){
+    // pole on the roof at x=41
+    ctx.fillStyle = ink; ctx.fillRect(41, 47, 1, 6);
+    var w = windKmh, len = w < 4 ? 0 : (w < 15 ? 2 : 3);
+    var right = windToRight, x0 = right ? 42 : 40 - (len ? len - 1 : 0);
+    if (len === 0){
+      // calm: it hangs
+      for (var r=0;r<3;r++){ ctx.fillStyle = FLAG[r]; ctx.fillRect(right ? 42 : 40, 47 + r, 1, 1); }
+    } else {
+      var period = Math.max(2, Math.round(9 - w/6)), ph = Math.floor(frame / period) % 2;
+      for (var r=0;r<3;r++){
+        ctx.fillStyle = FLAG[r];
+        ctx.fillRect(x0, 47 + r, len, 1);
+        // the free end ripples
+        var tip = right ? x0 + len - 1 : x0;
+        ctx.fillStyle = FLAG[(r + ph) % 3];
+        ctx.fillRect(tip, 47 + r, 1, 1);
+      }
+    }
+    // chimney on the low house, smoke below 5 degrees
+    ctx.fillStyle = ink; ctx.fillRect(27, 49, 1, 2);
+    if (tempC !== null && tempC < 5){
+      ctx.save();
+      for (var i=0;i<4;i++){
+        var a = (frame + i*10) % 40;
+        var sx = 27 + Math.sin((frame + i*7)/6)*1.5 + a*0.06*(windToRight ? 1 : -1)*Math.min(3, windKmh/8);
+        var sy = 48 - a*0.5;
+        ctx.globalAlpha = 0.85 * (1 - a/40);
+        ctx.fillStyle = "#D8D8D0";
+        ctx.fillRect(sx|0, sy|0, 1, 1);
+      }
+      ctx.restore();
+    }
   }
 
   /* ---------- the scenes ---------- */
@@ -1050,7 +1088,7 @@
   setInterval(tickDayNight, 30*1000);
 
   /* ---------- weather ---------- */
-  var useF = false, tempC = null, condLabel = "", windKmh = 0;
+  var useF = false, tempC = null, condLabel = "", windKmh = 0, windToRight = true;
   function clockStr(unix){
     return new Date(unix*1000).toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit", timeZone:"Europe/Amsterdam" });
   }
@@ -1068,7 +1106,7 @@
 
   function loadWeather(){
     fetch("https://api.open-meteo.com/v1/forecast?latitude="+LAT+"&longitude="+LON+
-          "&current=temperature_2m,weather_code,is_day,wind_speed_10m" +
+          "&current=temperature_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m" +
           "&daily=sunrise,sunset&forecast_days=1&timeformat=unixtime&timezone=Europe%2FAmsterdam")
       .then(function(r){ return r.json(); })
       .then(function(d){
@@ -1076,6 +1114,7 @@
         if (!c) throw 0;
         tempC = c.temperature_2m;
         windKmh = c.wind_speed_10m || 0;
+        if (typeof c.wind_direction_10m === "number") windToRight = Math.sin(c.wind_direction_10m * Math.PI/180) < 0;  // from the west: streams east
         if (d.daily && d.daily.sunrise && d.daily.sunrise[0]){ sun.rise = d.daily.sunrise[0]; sun.set = d.daily.sunset[0]; }
         lastCode = c.weather_code;
         isNight = sun.rise ? timeOfDay().night : (c.is_day !== 1);
