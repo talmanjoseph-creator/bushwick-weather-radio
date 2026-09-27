@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Utrecht Weather Radio v16: news from the repo -->
+<!-- Utrecht Weather Radio v17: colour drift, sunrise/sunset in the meta -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -42,7 +42,7 @@
     align-items:center;
     justify-content:center;
     padding:32px 20px;
-    transition:background-color 1.2s ease;
+    transition:background-color 8s linear;   /* the drift: see drift() */
     -webkit-font-smoothing:none;
   }
 
@@ -290,7 +290,7 @@
     <div class="cond" id="cond">reading the sky</div>
   </div>
 
-  <div class="meta" id="meta">UTRECHT, NETHERLANDS &middot; 52.091 N 5.121 E</div>
+  <div class="meta" id="meta">UTRECHT &middot; 52.091 N 5.121 E</div>
 
   <hr>
 
@@ -976,9 +976,36 @@
   function applyTheme(key, raw){
     var p = raw ? SCENES[key] : scenePalette(key);
     var root = document.documentElement.style;
-    root.setProperty("--page", p.page);
+    root.setProperty("--page", (!raw && driftOn) ? driftColor(p.page) : p.page);
     root.setProperty("--accent", p.accent);
   }
+
+  /* ---------- the drift: every 8s the page colour slides to a new hue,
+     around the scene's own colour, always as dark as the scene meant it ---------- */
+  function hexHsl(hex){
+    var c = hexRgb(hex), r=c[0]/255, g=c[1]/255, b=c[2]/255;
+    var max=Math.max(r,g,b), min=Math.min(r,g,b), l=(max+min)/2, h=0, s=0, d=max-min;
+    if (d){
+      s = d / (1 - Math.abs(2*l - 1));
+      if (max===r) h = ((g-b)/d) % 6; else if (max===g) h = (b-r)/d + 2; else h = (r-g)/d + 4;
+      h = (h*60 + 360) % 360;
+    }
+    return { h:h, s:s, l:l };
+  }
+  var driftOn = false, driftStep = 0;
+  function driftColor(pageHex){
+    var c = hexHsl(pageHex);
+    var hue = (c.h + driftStep*47) % 360;            // 47°: a slow walk around the wheel that never repeats soon
+    var sat = Math.min(0.5, Math.max(0.3, c.s + 0.2)),
+        lig = Math.min(0.15, c.l + 0.045);
+    return "hsl(" + hue.toFixed(0) + " " + (sat*100).toFixed(0) + "% " + (lig*100).toFixed(1) + "%)";
+  }
+  function drift(){
+    if (carding || intro.on || reduce) return;
+    driftOn = true; driftStep++;
+    document.documentElement.style.setProperty("--page", driftColor(scenePalette(current).page));
+  }
+  setInterval(drift, 8000);
 
   /* ---------- title card ----------
      Six hard cuts at 3/s (under the flash-safety line), each a different
@@ -1126,8 +1153,8 @@
           renderTemp();
           elCond.textContent = info.label;
         }
-        elMeta.innerHTML = "UTRECHT, NETHERLANDS &middot; WMO " + c.weather_code +
-                           (sun.rise ? " &middot; &uarr;" + clockStr(sun.rise) + " &darr;" + clockStr(sun.set)
+        elMeta.innerHTML = "UTRECHT" +
+                           (sun.rise ? " &middot; SUNRISE " + clockStr(sun.rise) + " &middot; SUNSET " + clockStr(sun.set)
                                      : " &middot; " + (isNight ? "NIGHT" : "DAY"));
         realScene = info.scene;
         if (intro.on) current = info.scene;
