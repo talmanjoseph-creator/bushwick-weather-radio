@@ -98,6 +98,35 @@
     width:100%;
   }
 
+  /* --- news ticker --- */
+  .news{
+    display:flex; align-items:center; gap:10px;
+    border-bottom:1px dotted var(--rule);
+    padding:0 0 10px; margin:0 0 14px;
+    overflow:hidden;
+  }
+  .news[hidden]{ display:none; }
+  .news-tag{
+    flex:none; font-size:10px; letter-spacing:2px;
+    color:var(--accent); border:1px solid var(--accent);
+    padding:3px 6px 2px;
+  }
+  .ticker{ flex:1; overflow:hidden; }
+  .ticker-inner{
+    display:inline-block; white-space:nowrap;
+    font-size:11px; letter-spacing:1px;
+    animation-name:tick; animation-timing-function:linear; animation-iteration-count:infinite;
+  }
+  .ticker-inner a{ color:var(--fg); text-decoration:none; }
+  .ticker-inner a:hover, .ticker-inner a:focus{ color:var(--accent); }
+  .ticker:hover .ticker-inner, .ticker:focus-within .ticker-inner{ animation-play-state:paused; }
+  .sep{ color:var(--dim); margin:0 12px; }
+  @keyframes tick{ from{ transform:translateX(0); } to{ transform:translateX(-50%); } }
+  @media (prefers-reduced-motion: reduce){
+    .ticker-inner{ animation:none; white-space:normal; }
+    .news{ align-items:flex-start; }
+  }
+
   /* --- radio --- */
   .channels{
     display:flex;
@@ -182,6 +211,11 @@
 <body>
 
 <main>
+  <div class="news" id="news" hidden>
+    <span class="news-tag">NIEUWS</span>
+    <div class="ticker"><div class="ticker-inner" id="tickerInner"></div></div>
+  </div>
+
   <canvas id="sky" width="64" height="64" role="img" aria-label="Pixel animation of current Utrecht weather"></canvas>
 
   <div class="readout">
@@ -611,6 +645,44 @@
       chEls(ch).until.textContent = "STREAM DROPPED — PRESS PLAY";
     }
   });
+
+  /* ---------- Utrecht news ticker (RTV Utrecht via rss2json) ---------- */
+  var elNews = document.getElementById("news"),
+      elTicker = document.getElementById("tickerInner");
+  var NEWS_URL = "https://api.rss2json.com/v1/api.json?rss_url=" +
+                 encodeURIComponent("https://www.rtvutrecht.nl/rss/nieuws.xml");
+
+  function esc(s){
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;")
+                    .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  function loadNews(){
+    fetch(NEWS_URL)
+      .then(function(r){ if(!r.ok) throw 0; return r.json(); })
+      .then(function(d){
+        var items = (d.items || []).slice(0, 10);
+        if(d.status !== "ok" || !items.length) throw 0;
+        var half = items.map(function(h){
+          var t = esc((h.title || "").toUpperCase()),
+              inner = h.link
+                ? '<a href="'+esc(h.link)+'" target="_blank" rel="noopener">'+t+'</a>'
+                : t;
+          return '<span class="tick">'+inner+'<span class="sep">///</span></span>';
+        }).join("");
+        if(reduce){
+          elTicker.innerHTML = half; /* no motion: static list */
+        } else {
+          elTicker.innerHTML = half + half; /* two copies: seamless -50% loop */
+          elTicker.style.animationDuration =
+            Math.max(20, elTicker.textContent.length*0.15) + "s";
+        }
+        elNews.hidden = false;
+      })
+      .catch(function(){ elNews.hidden = true; });
+  }
+  loadNews();
+  setInterval(loadNews, 15*60*1000);
 })();
 </script>
 
