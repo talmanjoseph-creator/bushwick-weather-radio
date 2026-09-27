@@ -21,10 +21,11 @@ jobs:
           git config user.name "data-bot"
           git config user.email "actions@users.noreply.github.com"
           # news: only when a headline changed, not just the timestamp
-          git diff --quiet -I '"updated"' -- news.json || git add news.json
-          # weather: whenever the forecast file changed
-          git diff --quiet -- weather.json || git add weather.json
-          git diff --quiet -- history.json || git add history.json
+          for f in news-*.json; do git diff --quiet -I '"updated"' -- "$f" || git add "$f"; done
+          # weather and history: whenever the file changed
+          for f in weather-*.json history-*.json; do git diff --quiet -- "$f" || git add "$f"; done
+          git add -N . >/dev/null 2>&1 || true
+          git add news-*.json weather-*.json history-*.json 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "no change"
           else

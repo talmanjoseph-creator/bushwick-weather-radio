@@ -1,17 +1,17 @@
 <!doctype html>
-<!-- Utrecht Weather Radio v24: the void -->
+<!-- Weather Radio v25: two cities -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Utrecht Weather Radio</title>
-<meta name="description" content="Current Utrecht weather as a pixel scene, NTS Radio live, and the day's headlines.">
+<title>Weather Radio</title>
+<meta name="description" content="Utrecht and New York weather as a pixel scene, NTS Radio live, and the day's headlines.">
 <meta name="theme-color" content="#080D1C">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Utrecht Weather Radio">
-<meta property="og:description" content="Current Utrecht weather as a pixel scene, NTS Radio live, and the day's headlines.">
+<meta property="og:title" content="Utrecht / New York Weather Radio">
+<meta property="og:description" content="Utrecht and New York weather as a pixel scene, NTS Radio live, and the day's headlines.">
 <meta property="og:image" content="https://talmanjoseph-creator.github.io/utrecht-news-and-weather/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -237,6 +237,7 @@
     padding:5px 8px 4px; cursor:pointer; margin-top:4px;
   }
   .soundtag[data-on="1"]{ color:var(--accent); border-color:var(--accent); border-style:solid; }
+  .tags{ display:flex; gap:8px; }
   .intro .soundtag{ opacity:0; }
   .soundtag{ transition:opacity .35s steps(4,end), color 1.2s ease, border-color 1.2s ease; }
 
@@ -318,7 +319,7 @@
     <div class="cond" id="cond">reading the sky</div>
   </div>
 
-  <div class="meta" id="meta">UTRECHT &middot; 52.091 N 5.121 E</div>
+  <div class="meta" id="meta">&middot;</div>
 
   <hr>
 
@@ -341,7 +342,10 @@
     </div>
   </div>
 
-  <button class="soundtag" id="soundTag" data-on="0" aria-pressed="false">&#9834; SOUND OFF</button>
+  <div class="tags">
+    <button class="soundtag" id="soundTag" data-on="0" aria-pressed="false">&#9834; SOUND OFF</button>
+    <button class="soundtag" id="cityTag" aria-label="Switch city">&#8646; NEW YORK</button>
+  </div>
 </main>
 
 <audio id="audio" preload="none"></audio>
@@ -350,7 +354,33 @@
 (function(){
   "use strict";
 
-  var LAT = 52.0907, LON = 5.1214;
+  /* ---------- the cities ---------- */
+  var CITIES = {
+    utrecht: {
+      key:"utrecht", name:"UTRECHT", title:"Utrecht", lat:52.0907, lon:5.1214, tz:"Europe/Amsterdam", coords:"52.091 N 5.121 E",
+      newsWord:"NIEUWS", feeds:{ a:{ label:"EN", name:"DutchNews.nl", url:"https://www.dutchnews.nl/feed/" },
+                                 b:{ label:"NL", name:"RTV Utrecht", url:"https://www.rtvutrecht.nl/rss/nieuws.xml" } },
+      flag:["#AE1C28","#FFFFFF","#21468B"], flagPole:[41,47], chimney:[27,49], steamBelow:5,
+      train:{ body:"#FFC917", stripe:"#003082", win:"#1B262F" },
+      words:["UTRECHT","NIEUWS","EN","WEER","DOM","52.09 N","5.12 E"], other:"nyc", otherName:"NEW YORK"
+    },
+    nyc: {
+      key:"nyc", name:"NEW YORK", title:"New York", lat:40.7128, lon:-74.0060, tz:"America/New_York", coords:"40.713 N 74.006 W",
+      newsWord:"NEWS", feeds:{ a:{ label:"AMNY", name:"amNY", url:"https://www.amny.com/feed/" },
+                               b:{ label:"THE CITY", name:"THE CITY", url:"https://www.thecity.nyc/feed/" } },
+      flag:["#B22234","#FFFFFF","#B22234"], flagPole:[55,46], chimney:[15,50], steamBelow:12,
+      train:{ body:"#C9CDD1", stripe:"#0039A6", win:"#2B2F36" },
+      words:["NEW YORK","BUSHWICK","EMPIRE","STATE","40.71 N","74.00 W","NYC"], other:"utrecht", otherName:"UTRECHT"
+    }
+  };
+  var city = CITIES.utrecht;
+  (function(){
+    var pick = null;
+    if (location.hash === "#nyc") pick = "nyc"; else if (location.hash === "#utrecht") pick = "utrecht";
+    if (!pick){ try { pick = localStorage.getItem("uwr:city"); } catch(e){} }
+    if (pick && CITIES[pick]) city = CITIES[pick];
+  })();
+  var LAT = city.lat, LON = city.lon;
   var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   /* ---------- palettes: each scene is its own small closed world ---------- */
@@ -501,6 +531,7 @@
   function skyline(ink, lit, towerF, roofF){
     if (towerF === undefined) towerF = 1;
     if (roofF  === undefined) roofF  = 1;
+    if (city.key === "nyc") return skylineNYC(ink, lit, towerF, roofF);
     ctx.save();
     ctx.beginPath();
     // the tower builds upward from its base, the roofline fills in from the left
@@ -535,35 +566,77 @@
     if (roofF >= 1) flagAndSmoke(ink);
   }
 
+  /* The other horizon: Midtown from the east. The Empire State Building,
+     a water tower on a low roof (every New York roof has one), and the
+     steam that rises from the street when it's cold. */
+  var BUILDINGS_NYC=[[0,7,50],[7,5,46],[12,8,52],[20,6,38],[26,7,49],[33,5,53],[47,6,47],[53,5,52],[58,6,50]];
+  var WINDOWS_NYC=[[2,53],[4,58],[8,49],[9,55],[14,56],[17,60],[21,41],[23,46],[22,52],[24,57],[28,55],[31,60],[35,57],
+                   [41,33],[43,38],[42,44],[44,50],[45,55],[41,60],[48,50],[50,56],[55,55],[60,53],[61,59]];
+  function skylineNYC(ink, lit, towerF, roofF){
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(38, 58 - Math.round(44*towerF), 10, 64);      // the Empire State builds up
+    ctx.rect(0, 36, Math.round(64*roofF), 28);             // the rest fills in from the left
+    ctx.clip();
+    ctx.fillStyle = ink;
+    /* Empire State Building */
+    ctx.fillRect(40,30,7,28);   // main shaft
+    ctx.fillRect(41,24,5,6);    // setback
+    ctx.fillRect(42,19,3,5);    // upper setback
+    ctx.fillRect(43,14,1,5);    // mast
+    /* the rest of Midtown */
+    for(var i=0;i<BUILDINGS_NYC.length;i++){
+      var b=BUILDINGS_NYC[i];
+      ctx.fillRect(b[0], b[2], b[1], 64-b[2]);
+    }
+    /* water tower on the roof at x=26 */
+    ctx.fillRect(28,43,4,5);    // tank
+    ctx.fillRect(29,42,2,1);    // cone
+    ctx.fillRect(28,48,1,1); ctx.fillRect(31,48,1,1);   // legs
+    ctx.fillStyle = "rgba(255,255,255,.10)";
+    ctx.fillRect(0,63,64,1);    // the tracks
+    if (lit && roofF >= 1){
+      ctx.fillStyle = "#FFD98A";
+      for(var j=0;j<WINDOWS_NYC.length;j++){
+        if ((frame + j*5) % 40 > 6) ctx.fillRect(WINDOWS_NYC[j][0], WINDOWS_NYC[j][1], 1, 1);
+      }
+      // the mast's aircraft light
+      if ((frame % 16) < 8){ ctx.fillStyle = "#FF3B30"; ctx.fillRect(43, 14, 1, 1); }
+    }
+    ctx.restore();
+    if (roofF >= 1) flagAndSmoke(ink);
+  }
+
   /* ---------- a flag that knows the wind, a chimney that knows the cold ---------- */
-  var FLAG = ["#AE1C28", "#FFFFFF", "#21468B"];
   function flagAndSmoke(ink){
-    // pole on the roof at x=41
-    ctx.fillStyle = ink; ctx.fillRect(41, 47, 1, 6);
+    var FLAG = city.flag, px0 = city.flagPole[0], py0 = city.flagPole[1];
+    ctx.fillStyle = ink; ctx.fillRect(px0, py0, 1, 6);
     var w = windKmh, len = w < 4 ? 0 : (w < 15 ? 2 : 3);
-    var right = windToRight, x0 = right ? 42 : 40 - (len ? len - 1 : 0);
+    var right = windToRight, x0 = right ? px0 + 1 : px0 - 1 - (len ? len - 1 : 0);
     if (len === 0){
       // calm: it hangs
-      for (var r=0;r<3;r++){ ctx.fillStyle = FLAG[r]; ctx.fillRect(right ? 42 : 40, 47 + r, 1, 1); }
+      for (var r=0;r<3;r++){ ctx.fillStyle = FLAG[r]; ctx.fillRect(right ? px0 + 1 : px0 - 1, py0 + r, 1, 1); }
     } else {
       var period = Math.max(2, Math.round(9 - w/6)), ph = Math.floor(frame / period) % 2;
       for (var r=0;r<3;r++){
         ctx.fillStyle = FLAG[r];
-        ctx.fillRect(x0, 47 + r, len, 1);
+        ctx.fillRect(x0, py0 + r, len, 1);
         // the free end ripples
         var tip = right ? x0 + len - 1 : x0;
         ctx.fillStyle = FLAG[(r + ph) % 3];
-        ctx.fillRect(tip, 47 + r, 1, 1);
+        ctx.fillRect(tip, py0 + r, 1, 1);
       }
+      if (city.key === "nyc"){ ctx.fillStyle = "#3C3B6E"; ctx.fillRect(right ? x0 : x0 + len - 1, py0, 1, 1); }  // the canton
     }
-    // chimney on the low house, smoke below 5 degrees
-    ctx.fillStyle = ink; ctx.fillRect(27, 49, 1, 2);
-    if (tempC !== null && tempC < 5){
+    // chimney (or a steam pipe), smoke when it's cold enough for this city
+    var cx0 = city.chimney[0], cy0 = city.chimney[1];
+    ctx.fillStyle = ink; ctx.fillRect(cx0, cy0, 1, 2);
+    if (tempC !== null && tempC < city.steamBelow){
       ctx.save();
       for (var i=0;i<4;i++){
         var a = (frame + i*10) % 40;
-        var sx = 27 + Math.sin((frame + i*7)/6)*1.5 + a*0.06*(windToRight ? 1 : -1)*Math.min(3, windKmh/8);
-        var sy = 48 - a*0.5;
+        var sx = cx0 + Math.sin((frame + i*7)/6)*1.5 + a*0.06*(windToRight ? 1 : -1)*Math.min(3, windKmh/8);
+        var sy = cy0 - 1 - a*0.5;
         ctx.globalAlpha = 0.85 * (1 - a/40);
         ctx.fillStyle = "#D8D8D0";
         ctx.fillRect(sx|0, sy|0, 1, 1);
@@ -694,7 +767,8 @@
   var DIRS = [[0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1]];
   var chimeUntil = -1, lastHour = -1;
   function clockFace(lit){
-    var d = new Date(), h = d.getHours(), m = d.getMinutes();
+    var parts = new Date().toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit", timeZone:city.tz }).split(":"),
+        h = +parts[0], m = +parts[1];
     if (h !== lastHour){ if (lastHour !== -1 || DEMO) chimeUntil = frame + 6; lastHour = h; }
     var chiming = frame < chimeUntil;
     ctx.fillStyle = chiming ? "#FFF3A8" : (lit ? "#FFD98A" : "#F2EFE6");
@@ -773,12 +847,12 @@
     }
     var t = train, x0 = t.x|0;
     if (x0 > -t.len && x0 < 64 && (frame & 3) === 0) SFX.clack();
-    ctx.fillStyle = "#FFC917"; ctx.fillRect(x0, 60, t.len, 2);
-    ctx.fillStyle = "#003082"; ctx.fillRect(x0, 62, t.len, 1);
-    ctx.fillStyle = lit ? "#FFF3A8" : "#1B262F";
+    ctx.fillStyle = city.train.body;   ctx.fillRect(x0, 60, t.len, 2);
+    ctx.fillStyle = city.train.stripe; ctx.fillRect(x0, 62, t.len, 1);
+    ctx.fillStyle = lit ? "#FFF3A8" : city.train.win;
     for (var w = x0 + 2; w < x0 + t.len - 1; w += 3) ctx.fillRect(w, 60, 1, 1);
     // nose
-    ctx.fillStyle = "#003082";
+    ctx.fillStyle = city.train.stripe;
     ctx.fillRect(t.dir > 0 ? x0 + t.len - 1 : x0, 60, 1, 1);
     t.x += 1.25 * t.dir;
     if ((t.dir > 0 && t.x > 66) || (t.dir < 0 && t.x < -t.len - 2)){
@@ -786,7 +860,7 @@
     }
   }
 
-  /* ---------- the time, Utrecht time, in a 3x5 pixel face at the top right ---------- */
+  /* ---------- the time, the city's time, in a 3x5 pixel face at the top right ---------- */
   var DIGITS = {
     "0":[7,5,5,5,7], "1":[2,6,2,2,7], "2":[7,1,7,4,7], "3":[7,1,7,1,7], "4":[5,5,7,1,1],
     "5":[7,4,7,1,7], "6":[7,4,7,5,7], "7":[7,1,1,1,1], "8":[7,5,7,5,7], "9":[7,5,7,1,7]
@@ -797,7 +871,7 @@
     for (var r=0;r<5;r++) for (var c=0;c<3;c++) if (rows[r] & (4 >> c)) ctx.fillRect(x+c, y+r, 1, 1);
   }
   function clockInScene(p){
-    var t = new Date().toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit", timeZone:"Europe/Amsterdam" });
+    var t = new Date().toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit", timeZone:city.tz });
     var x = 45, y = 2, colonOn = (Date.now()/1000|0) % 2 === 0;
     var shadow = "rgba(0,0,0,.55)", ink = "#EDE9E0";
     function draw(dx, dy, col){
@@ -1072,6 +1146,35 @@
   }
   setInterval(drift, 8000);
 
+  /* ---------- the other city ---------- */
+  var elCity = document.getElementById("cityTag");
+  function showCity(){
+    elCity.innerHTML = "&#8646; " + city.otherName;
+    elMeta.innerHTML = city.name + " &middot; " + city.coords;
+    cv.setAttribute("aria-label", "Pixel animation of current " + city.name + " weather");
+    document.title = city.title + " Weather Radio";
+  }
+  function switchCity(key){
+    if (!CITIES[key] || key === city.key || intro.on || carding) return;
+    // snapshot what's on screen so the new skyline wipes in
+    var snap = mkCanvas(); snap.getContext("2d").drawImage(cv, 0, 0);
+    city = CITIES[key];
+    try { localStorage.setItem("uwr:city", key); } catch(e){}
+    if (override){ clearTimeout(overrideTimer); override = null; metaSaved = null; }
+    sun.rise = sun.set = null; tempC = null; lastCode = null; windKmh = 0; histHours = null; histNext = null;
+    trans = { from: current, snap: snap, start: frame };
+    flock = null; perched = null; train = null;
+    CARDS = cityCards();
+    newsFile = null; newsCache = { a: null, b: null }; newsLang = "a"; elNews.hidden = true;
+    loadLastGood();
+    showCity();
+    elTemp.textContent = "--\u00B0"; elCond.textContent = "reading the sky";
+    clearTimeout(weatherTimer);
+    loadWeather(); loadHistory(); loadNews();
+    SFX.thud();
+  }
+  elCity.addEventListener("click", function(){ switchCity(city.other); });
+
   /* ---------- sound: small chip noises made in code, off until you say so ---------- */
   var AC = null, soundOn = false, elSound = document.getElementById("soundTag");
   try { soundOn = localStorage.getItem("uwr:sound") === "1"; } catch(e){}
@@ -1199,8 +1302,8 @@
     var html = '<span class="' + cls + (opt.mod ? " " + opt.mod : "") + '">' + text + '</span>' + (opt.extra || "");
     return { html: html, scene: scene, inv: !!opt.inv, h: opt.h || 1 };
   }
-  var CARDS = [
-    card("UTRECHT", C_MONO, "clearDay"),
+  function cityCards(){ var W = city.words; return [
+    card(W[0],      C_MONO, "clearDay"),
     card("NEWS",    C_DG,   "thunder",    { inv:true }),
     card("AND",     "w mono md", "rain",  { extra:'<span class="w mono sm tl">52.0907 N</span><span class="w mono sm br">5.1214 E</span>' }),
     card("WEATHER", C_DG,   "clearNight", { mod:"big" }),
@@ -1211,22 +1314,23 @@
     card("LIVE",    C_DG,   "cloudyDay"),
     card("FROM",    C_MONO, "cloudyNight",{ mod:"up" }),
     card("LONDON",  C_DG,   "snow",       { inv:true }),
-    card("NIEUWS",  C_MONO, "rain",       { mod:"dn" }),
-    card("EN",      "w mono md", "drizzle"),
-    card("WEER",    C_DG,   "clearDay",   { mod:"big" }),
-    card("UTRECHT", C_DG,   "thunder",    { inv:true, h:2 }),
-    card("52.09 N", C_MONO, "clearNight", { mod:"up" }),
-    card("5.12 E",  C_MONO, "clearNight", { mod:"dn" }),
-    card("DOM",     C_DG,   "fog",        { mod:"big" }),
+    card(W[1],      C_MONO, "rain",       { mod:"dn" }),
+    card(W[2],      "w mono md", "drizzle"),
+    card(W[3],      C_DG,   "clearDay",   { mod:"big" }),
+    card(W[0],      C_DG,   "thunder",    { inv:true, h:2 }),
+    card(W[5],      C_MONO, "clearNight", { mod:"up" }),
+    card(W[6],      C_MONO, "clearNight", { mod:"dn" }),
+    card(W[4],      C_DG,   "fog",        { mod:"big" }),
     card("NEWS",    C_MONO, "cloudyDay",  { inv:true }),
     card("AND",     "w mono md", "cloudyNight"),
     card("WEATHER", C_MONO, "rain",       { mod:"lf" }),
     card("RADIO",   C_DG,   "overcast",   { mod:"rt" }),
     card("NTS 1",   C_MONO, "snow",       { inv:true }),
     card("NTS 2",   C_MONO, "snow"),
-    card("UTRECHT", C_MONO, "clearDay",   { h:2 }),
+    card(W[0],      C_MONO, "clearDay",   { h:2 }),
     card("NEWS AND WEATHER RADIO", "w mono sm", "thunder", { inv:true, h:3 })
-  ];
+  ]; }
+  var CARDS = cityCards();
   var elCard = document.getElementById("card"), carding = false;
   // size each .fit word to 88% of the viewport width, whatever font it landed in
   function fitWords(){
@@ -1274,7 +1378,7 @@
     if (document.fonts && document.fonts.load){
       // Google Fonts splits these by script; ask for the Latin pieces by name
       Promise.all([
-        document.fonts.load("700 100px Silkscreen", "UTRECHT NTS AND 0123456789.NE"),
+        document.fonts.load("700 100px Silkscreen", "UTRECHT NEW YORK BUSHWICK NTS AND 0123456789.NE"),
         document.fonts.load("100px DotGothic16", "NEWS WEATHER RADIO")
       ]).then(go, go);
       document.fonts.addEventListener && document.fonts.addEventListener("loadingdone", function(){ if (carding) fitWords(); });
@@ -1298,7 +1402,7 @@
   /* ---------- weather ---------- */
   var useF = false, tempC = null, condLabel = "", windKmh = 0, windToRight = true;
   function clockStr(unix){
-    return new Date(unix*1000).toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit", timeZone:"Europe/Amsterdam" });
+    return new Date(unix*1000).toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit", timeZone:city.tz });
   }
   var elTemp = document.getElementById("temp"),
       elCond = document.getElementById("cond"),
@@ -1313,7 +1417,8 @@
   elTemp.addEventListener("click", function(){ useF = !useF; renderTemp(); });
 
   var lastGood = null, weatherTimer = null;
-  try { lastGood = JSON.parse(localStorage.getItem("uwr:forecast") || "null"); } catch(e){}
+  function loadLastGood(){ try { lastGood = JSON.parse(localStorage.getItem("uwr:forecast:" + city.key) || "null"); } catch(e){ lastGood = null; } }
+  loadLastGood();
 
   function applyForecast(d, stale){
     var c = d.current;
@@ -1331,7 +1436,7 @@
       renderTemp();
       elCond.textContent = info.label;
     }
-    elMeta.innerHTML = "UTRECHT" +
+    elMeta.innerHTML = city.name +
                        (sun.rise ? " &middot; SUNRISE " + clockStr(sun.rise) + " &middot; SUNSET " + clockStr(sun.set)
                                  : " &middot; " + (isNight ? "NIGHT" : "DAY")) +
                        (stale ? " &middot; LAST SEEN " + clockStr(d.fetchedAt/1000) : "");
@@ -1347,12 +1452,14 @@
 
   /* Order of trust: weather.json (written by the GitHub Action every 15 min),
      then Open-Meteo directly, then whatever this phone saw last. */
-  var API = "https://api.open-meteo.com/v1/forecast?latitude="+LAT+"&longitude="+LON+
-            "&current=temperature_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m" +
-            "&daily=sunrise,sunset&forecast_days=1&timeformat=unixtime&timezone=Europe%2FAmsterdam";
+  function apiUrl(){
+    return "https://api.open-meteo.com/v1/forecast?latitude="+city.lat+"&longitude="+city.lon+
+           "&current=temperature_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m" +
+           "&daily=sunrise,sunset&forecast_days=1&timeformat=unixtime&timezone=" + encodeURIComponent(city.tz);
+  }
 
   function fromRepo(){
-    return fetch("weather.json?t=" + (Date.now()/60000|0))
+    return fetch("weather-" + city.key + ".json?t=" + (Date.now()/60000|0))
       .then(function(r){ if (!r.ok) throw 0; return r.json(); })
       .then(function(d){
         if (!d || !d.current || !(Date.now() - d.fetchedAt < 45*60*1000)) throw 0;   // stale: the Action is behind
@@ -1360,7 +1467,7 @@
       });
   }
   function fromApi(){
-    return fetch(API)
+    return fetch(apiUrl())
       .then(function(r){ return r.json(); })
       .then(function(d){
         if (!d || !d.current) throw new Error(d && d.reason || "no data");
@@ -1373,7 +1480,7 @@
     fromRepo().catch(fromApi)
       .then(function(d){
         lastGood = d;
-        try { localStorage.setItem("uwr:forecast", JSON.stringify(d)); } catch(e){}
+        try { localStorage.setItem("uwr:forecast:" + city.key, JSON.stringify(d)); } catch(e){}
         applyForecast(d, false);
         scheduleWeather(10*60*1000);
       })
@@ -1389,7 +1496,7 @@
           condLabel = "no signal from the sky";
           if (intro.on){ if (intro.weatherAt === null) intro.weatherAt = intro.t; }
           else { elCond.textContent = condLabel; elTemp.textContent = "--\u00B0"; }
-          elMeta.innerHTML = "UTRECHT &middot; FORECAST UNAVAILABLE &middot; RETRYING";
+          elMeta.innerHTML = city.name + " &middot; FORECAST UNAVAILABLE &middot; RETRYING";
         }
         scheduleWeather(60*1000);
       });
@@ -1398,7 +1505,7 @@
 
   /* ---------- the last 24 hours: one dithered sky per hour, sun or moon at its height ---------- */
   var elStrip = document.getElementById("strip"), hc = document.getElementById("hist"),
-      hctx = hc.getContext("2d"), elHistLabel = document.getElementById("histlabel"), histHours = null;
+      hctx = hc.getContext("2d"), elHistLabel = document.getElementById("histlabel"), histHours = null, histNext = null;
   hctx.imageSmoothingEnabled = false;
 
   function drawStrip(){
@@ -1444,7 +1551,7 @@
   }
 
   function loadHistory(){
-    fetch("history.json?t=" + (Date.now()/60000|0))
+    fetch("history-" + city.key + ".json?t=" + (Date.now()/60000|0))
       .then(function(r){ if (!r.ok) throw 0; return r.json(); })
       .then(function(d){
         if (!d.hours || !d.hours.length) throw 0;
@@ -1563,7 +1670,7 @@
     ms.metadata = new MediaMetadata({
       title:  showName[playingCh],
       artist: "NTS " + playingCh + " · Live from London",
-      album:  "Utrecht Weather Radio",
+      album:  city.title + " Weather Radio",
       artwork: [{ src: sceneArtwork(), sizes: "512x512", type: "image/png" }]
     });
     ms.playbackState = "playing";
@@ -1622,16 +1729,15 @@
     }
   });
 
-  /* ---------- news ticker: EN = DutchNews.nl, NL = RTV Utrecht ---------- */
+  /* ---------- news ticker: two feeds per city, from the repo first ---------- */
   var elNews   = document.getElementById("news"),
       elTag    = document.getElementById("newsTag"),
       elTicker = document.getElementById("tickerInner");
-  // news.json is written by a GitHub Action every 15 minutes (scripts/fetch-news.mjs);
+  // news-<city>.json is written by a GitHub Action every 15 minutes (scripts/fetch-news.mjs);
   // rss2json is only the fallback if that file is missing or stale.
-  var RSS = { en: "https://www.dutchnews.nl/feed/", nl: "https://www.rtvutrecht.nl/rss/nieuws.xml" };
-  var newsFile = null;   // parsed news.json, once loaded
+  var newsFile = null;   // parsed news file, once loaded
   function loadNewsFile(){
-    return fetch("news.json?t=" + (Date.now()/60000|0))
+    return fetch("news-" + city.key + ".json?t=" + (Date.now()/60000|0))
       .then(function(r){ if(!r.ok) throw 0; return r.json(); })
       .then(function(d){
         var age = (Date.now() - Date.parse(d.updated)) / 3600000;
@@ -1640,7 +1746,7 @@
         return d;
       });
   }
-  var newsLang = "en", newsCache = { en: null, nl: null };
+  var newsLang = "a", newsCache = { a: null, b: null };
 
   function esc(s){
     return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;")
@@ -1649,7 +1755,7 @@
 
   function currentItems(){
     return newsCache[newsLang] ||
-           newsCache[newsLang === "en" ? "nl" : "en"] || [];
+           newsCache[newsLang === "a" ? "b" : "a"] || [];
   }
 
   function renderNews(){
@@ -1673,15 +1779,14 @@
     } else {
       elNews.hidden = true;
     }
-    elTag.innerHTML = "NIEUWS &middot; " + newsLang.toUpperCase();
-    elTag.setAttribute("aria-label",
-      "Headlines in " + (newsLang === "en" ? "English" : "Dutch") + " — activate to switch");
+    elTag.innerHTML = city.newsWord + " &middot; " + city.feeds[newsLang].label;
+    elTag.setAttribute("aria-label", "Headlines from " + city.feeds[newsLang].name + " — activate to switch");
   }
 
   function loadFeed(lang){
     var fromFile = newsFile && newsFile[lang] && newsFile[lang].length;
     if (fromFile){ newsCache[lang] = newsFile[lang].slice(0, 10); renderNews(); return; }
-    fetch("https://api.rss2json.com/v1/api.json?rss_url=" + encodeURIComponent(RSS[lang]))
+    fetch("https://api.rss2json.com/v1/api.json?rss_url=" + encodeURIComponent(city.feeds[lang].url))
       .then(function(r){ if(!r.ok) throw 0; return r.json(); })
       .then(function(d){
         var items = (d.items || []).slice(0, 10);
@@ -1693,17 +1798,19 @@
   }
 
   function loadNews(){
-    loadNewsFile().catch(function(){ newsFile = null; }).then(function(){ loadFeed("en"); loadFeed("nl"); });
+    loadNewsFile().catch(function(){ newsFile = null; }).then(function(){ loadFeed("a"); loadFeed("b"); });
   }
 
   elTag.addEventListener("click", function(){
-    newsLang = (newsLang === "en") ? "nl" : "en";
+    newsLang = (newsLang === "a") ? "b" : "a";
     renderNews();
     if(!newsCache[newsLang]) loadFeed(newsLang);
   });
 
   loadNews();
   setInterval(loadNews, 15*60*1000);
+
+  showCity();
 })();
 </script>
 
