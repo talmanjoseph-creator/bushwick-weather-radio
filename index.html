@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Utrecht Weather Radio v11: dawn and dusk -->
+<!-- Utrecht Weather Radio v12: transitions, scrub, replay, radio pulse -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -215,6 +215,15 @@
     letter-spacing:.1em;
     color:var(--dim);
   }
+
+  /* --- radio pulse: the page breathes while a channel is playing --- */
+  body.playing{ animation:breathe 4s ease-in-out infinite; }
+  @keyframes breathe{
+    0%,100%{ background-color:var(--page); }
+    50%{ background-color:color-mix(in srgb, var(--page) 86%, var(--accent)); }
+  }
+  body.playing .dot.beat{ animation-duration:1s; }
+  canvas{ touch-action:none; cursor:pointer; }
 
   /* --- title card: hard cuts, the site's own palettes, then black --- */
   body.cut{ transition:none !important; }
@@ -715,6 +724,96 @@
   /* ---------- render loop at a deliberate 8fps: GIF cadence, not 60fps polish ---------- */
   var frame = 0, current = "clearDay", isNight = false;
 
+  /* ---------- one scene, steady state, onto any 64x64 canvas ---------- */
+  function drawScene(key, target){
+    var saved = ctx;
+    ctx = target.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    var p = scenePalette(key), lit = isNight || key === "thunder";
+    ctx.drawImage(skyLayer(p.sky), 0, 0);
+    if (key === "fog"){
+      // fog is the one condition that swallows the buildings rather than sitting behind them
+      skyline(p.ink, lit);
+      painters.fog(frame, p);
+    } else {
+      (painters[key] || painters.overcast)(frame, p);
+      skyline(p.ink, lit);
+    }
+    ctx = saved;
+  }
+  function mkCanvas(){ var c = document.createElement("canvas"); c.width = c.height = 64; return c; }
+  var offA = mkCanvas(), offB = mkCanvas();
+  function renderScene(key, target){ drawScene(key, target); }
+
+  /* ---------- weather changes wipe in on the dither grid rather than cutting ---------- */
+  var WIPE_FRAMES = 16, trans = null;   // 2s at 8fps
+  function setScene(key){
+    if (key === current) return;
+    if (intro.on || reduce){ current = key; if (!carding) applyTheme(key); return; }
+    var snap = null;
+    if (trans){ snap = mkCanvas(); snap.getContext("2d").drawImage(cv, 0, 0); }
+    trans = { from: current, snap: snap, start: frame };
+    current = key;
+    if (!carding) applyTheme(key);
+    updateMediaSession();
+  }
+
+  /* ---------- scrub: drag across the scene to see any weather; tap to replay the opening ---------- */
+  var SCENE_KEYS = ["clearDay","cloudyDay","overcast","fog","drizzle","rain","snow","thunder","cloudyNight","clearNight"];
+  var SCENE_NAMES = { clearDay:"CLEAR", cloudyDay:"PARTLY CLOUDY", overcast:"OVERCAST", fog:"FOG", drizzle:"DRIZZLE",
+                      rain:"RAIN", snow:"SNOW", thunder:"THUNDER", cloudyNight:"CLOUDY NIGHT", clearNight:"CLEAR NIGHT" };
+  var override = null, overrideTimer = null, realScene = "clearDay", metaSaved = null;
+  function realSceneNow(){ return lastCode === null ? realScene : decode(lastCode, !isNight).scene; }
+  function scrubTo(key){
+    if (key === override) return;
+    override = key;
+    if (metaSaved === null) metaSaved = elMeta.innerHTML;
+    elMeta.innerHTML = "SCRUB &middot; " + SCENE_NAMES[key] + " &middot; RELEASE TO HOLD";
+    setScene(key);
+  }
+  function scrubEnd(){
+    clearTimeout(overrideTimer);
+    elMeta.innerHTML = "HOLDING " + SCENE_NAMES[override] + " &middot; BACK TO LIVE IN 6S";
+    overrideTimer = setTimeout(function(){
+      override = null;
+      if (metaSaved !== null){ elMeta.innerHTML = metaSaved; metaSaved = null; }
+      setScene(realSceneNow());
+    }, 6000);
+  }
+  var ptr = null;
+  cv.addEventListener("pointerdown", function(e){
+    if (intro.on || carding) return;
+    ptr = { x: e.clientX, moved: false, id: e.pointerId };
+    cv.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  cv.addEventListener("pointermove", function(e){
+    if (!ptr) return;
+    if (!ptr.moved && Math.abs(e.clientX - ptr.x) < 8) return;
+    ptr.moved = true;
+    clearTimeout(overrideTimer);
+    var r = cv.getBoundingClientRect();
+    var idx = Math.max(0, Math.min(9, Math.floor((e.clientX - r.left) / r.width * 10)));
+    scrubTo(SCENE_KEYS[idx]);
+  });
+  function ptrUp(e){
+    if (!ptr) return;
+    var moved = ptr.moved; ptr = null;
+    if (moved){ scrubEnd(); }
+    else if (!intro.on && !carding){ replay(); }
+  }
+  cv.addEventListener("pointerup", ptrUp);
+  cv.addEventListener("pointercancel", ptrUp);
+
+  function replay(){
+    if (intro.on || carding || reduce) return;
+    trans = null;
+    if (override){ clearTimeout(overrideTimer); override = null; if (metaSaved !== null){ elMeta.innerHTML = metaSaved; metaSaved = null; } current = realSceneNow(); }
+    intro.on = true; intro.t = 0; intro.cStart = null; intro.weatherAt = 0; intro.done = false;
+    document.body.classList.add("intro");
+    runCard(runIntro);
+  }
+
   /* ---------- title sequence ----------
      A: sky dithers in, row by row          0.0 – 0.8s
      B: tower builds, roofline fills        0.5 – 1.5s
@@ -738,15 +837,25 @@
     var lit = isNight || current === "thunder";
 
     if (!intro.on){
-      ctx.drawImage(skyLayer(p.sky), 0, 0);
-      if (current === "fog"){
-        // fog is the one condition that swallows the buildings rather than sitting behind them
-        skyline(p.ink, lit);
-        painters.fog(frame, p);
-      } else {
-        (painters[current] || painters.overcast)(frame, p);
-        skyline(p.ink, lit);
+      if (trans){
+        var q = (frame - trans.start) / WIPE_FRAMES;
+        if (q >= 1){ trans = null; }
+        else {
+          // A: where we were (live, or a snapshot if we were mid-wipe); B: where we're going
+          if (trans.snap) offA.getContext("2d").drawImage(trans.snap, 0, 0);
+          else renderScene(trans.from, offA);
+          renderScene(current, offB);
+          var A = offA.getContext("2d").getImageData(0,0,64,64),
+              B = offB.getContext("2d").getImageData(0,0,64,64), d = A.data, e = B.data;
+          for (var y=0;y<64;y++) for (var x=0;x<64;x++){
+            if ((BAYER[y&3][x&3] + 0.5)/16 < q){ var i = (y*64+x)*4; d[i]=e[i]; d[i+1]=e[i+1]; d[i+2]=e[i+2]; }
+          }
+          ctx.putImageData(A, 0, 0);
+          life(p, lit);
+          return;
+        }
       }
+      drawScene(current, cv);
       life(p, lit);
       return;
     }
@@ -934,7 +1043,7 @@
     var tod = timeOfDay();
     if (tod.night !== isNight){
       isNight = tod.night;
-      current = decode(lastCode, !isNight).scene;
+      if (!override) setScene(decode(lastCode, !isNight).scene);
     }
     if (!carding) applyTheme(current);   // twilight moves the tint by the minute
   }
@@ -981,7 +1090,9 @@
         elMeta.innerHTML = "UTRECHT, NETHERLANDS &middot; WMO " + c.weather_code +
                            (sun.rise ? " &middot; &uarr;" + clockStr(sun.rise) + " &darr;" + clockStr(sun.set)
                                      : " &middot; " + (isNight ? "NIGHT" : "DAY"));
-        current = info.scene;
+        realScene = info.scene;
+        if (intro.on) current = info.scene;
+        else if (!override) setScene(info.scene);
         if (!carding) applyTheme(current);
         paint();
         updateMediaSession();
@@ -1060,6 +1171,7 @@
     audio.load();
     if (playingCh) setBtn(playingCh, "off", "&#9654; PLAY");
     playingCh = 0;
+    document.body.classList.remove("playing");
     updateMediaSession();
   }
 
@@ -1108,9 +1220,11 @@
 
   audio.addEventListener("pause", function(){
     if (ms && playingCh) ms.playbackState = "paused";
+    document.body.classList.remove("playing");
   });
   audio.addEventListener("playing", function(){
     if (ms && playingCh) ms.playbackState = "playing";
+    if (playingCh) document.body.classList.add("playing");
   });
 
   [1, 2].forEach(function(ch){
@@ -1124,6 +1238,7 @@
       audio.play().then(function(){
         playingCh = ch;
         setBtn(ch, "on", "&#9646;&#9646; STOP");
+        document.body.classList.add("playing");
         updateMediaSession();
         loadNTS();
       }).catch(function(){
