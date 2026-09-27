@@ -101,7 +101,7 @@
   /* --- news ticker --- */
   .news{
     display:flex; align-items:center; gap:10px;
-    border-bottom:1px dotted var(--rule);
+    border-bottom:1px dotted var(--line);
     padding:0 0 10px; margin:0 0 14px;
     overflow:hidden;
   }
@@ -111,7 +111,7 @@
     color:var(--accent); border:1px solid var(--accent);
     padding:3px 6px 2px;
   }
-  .ticker{ flex:1; overflow:hidden; }
+  .ticker{ flex:1; min-width:0; overflow:hidden; }
   .ticker-inner{
     display:inline-block; white-space:nowrap;
     font-size:11px; letter-spacing:1px;
