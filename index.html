@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Utrecht Weather Radio v7: title sequence -->
+<!-- Utrecht Weather Radio v8: birds, clock, train -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -397,8 +397,7 @@
     ctx.fillRect(12,20,5,2);
     ctx.fillRect(13,18,3,2);
     ctx.fillRect(14,14,1,4);    // spire
-    ctx.fillStyle = lit ? "#FFD98A" : "#F2EFE6";
-    ctx.fillRect(13,27,2,2);    // clock face, glows at night
+    clockFace(lit);             // real time on the Dom
     /* canal-house roofline */
     ctx.fillStyle = ink;
     for(var i=0;i<BUILDINGS.length;i++){
@@ -407,6 +406,8 @@
     }
     ctx.fillRect(9,50,6,2);     // stepped gables
     ctx.fillRect(45,53,5,2);
+    ctx.fillStyle = "rgba(255,255,255,.10)";
+    ctx.fillRect(0,63,64,1);    // the rail into Centraal
     if (lit && roofF >= 1){
       ctx.fillStyle = "#FFD98A";
       for(var j=0;j<WINDOWS.length;j++){
@@ -525,6 +526,107 @@
     }
   }
 
+  /* ---------- life: things that happen rarely, so you never catch the loop ---------- */
+
+  // the Dom clock: a 3x3 face, one pixel per hand, snapped to eight directions
+  var DIRS = [[0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1]];
+  var chimeUntil = -1, lastHour = -1;
+  function clockFace(lit){
+    var d = new Date(), h = d.getHours(), m = d.getMinutes();
+    if (h !== lastHour){ if (lastHour !== -1 || DEMO) chimeUntil = frame + 6; lastHour = h; }
+    var chiming = frame < chimeUntil;
+    ctx.fillStyle = chiming ? "#FFF3A8" : (lit ? "#FFD98A" : "#F2EFE6");
+    ctx.fillRect(13,26,3,3);
+    var hd = DIRS[Math.round(((h % 12) + m/60) / 12 * 8) % 8],
+        md = DIRS[Math.round(m / 60 * 8) % 8];
+    ctx.fillStyle = "#12141D";
+    ctx.fillRect(14,27,1,1);
+    ctx.fillRect(14+md[0],27+md[1],1,1);
+    if (chiming && (frame & 1)) return;   // the bells: hands flash with the face
+    ctx.fillRect(14+hd[0],27+hd[1],1,1);
+  }
+
+  // birds: a loose V that crosses every 20-40s by day, never in rain
+  var DEMO = location.hash === "#demo";
+  var flock = null, nextFlockAt = DEMO ? 8 : 80, perched = null;
+  var NO_BIRDS = { rain:1, drizzle:1, thunder:1, snow:1 };
+  function spawnFlock(x, y, dir, n, wantsPerch){
+    var birds = [];
+    for (var i=0;i<n;i++) birds.push({ dx: -i*3*dir, dy: (i%2 ? 2 : -1)*Math.ceil(i/2), ph: i*2 });
+    flock = { dir:dir, x:x, y:y, v:0.55 + Math.random()*0.3, birds:birds, perch:wantsPerch };
+  }
+  function drawBird(x, y, up, col){
+    ctx.fillStyle = col;
+    x |= 0; y |= 0;
+    ctx.fillRect(x,y,1,1);
+    if (up){ ctx.fillRect(x-1,y-1,1,1); ctx.fillRect(x+1,y-1,1,1); }
+    else   { ctx.fillRect(x-1,y+1,1,1); ctx.fillRect(x+1,y+1,1,1); }
+  }
+  function birds(p){
+    var col = p.ink;
+    if (perched){
+      // one gull sitting on the spire, wings folded
+      ctx.fillStyle = col; ctx.fillRect(14,12,1,1); ctx.fillRect(13,13,1,1); ctx.fillRect(15,13,1,1);
+      if (frame > perched.until){
+        perched = null;
+        if (!flock) spawnFlock(14, 12, 1, 1, false);
+      }
+    }
+    if (!flock){
+      if (frame >= nextFlockAt && !isNight && !NO_BIRDS[current]){
+        var dir = Math.random() < 0.5 ? 1 : -1;
+        spawnFlock(dir > 0 ? -6 : 70, 12 + Math.random()*20, dir, 2 + (Math.random()*3|0), !perched && Math.random() < 0.3);
+      }
+      return;
+    }
+    var f = flock;
+    f.x += f.v * f.dir;
+    for (var i=0;i<f.birds.length;i++){
+      var b = f.birds[i], bx = f.x + b.dx, by = f.y + b.dy + Math.sin((frame + b.ph)/9);
+      drawBird(bx, by, ((frame + b.ph) >> 1) & 1, col);
+    }
+    // the last bird in the V peels off and lands on the Dom
+    if (f.perch && f.birds.length > 1){
+      var last = f.birds[f.birds.length-1];
+      if (Math.abs(f.x + last.dx - 14) < 1 && f.y + last.dy < 26){
+        f.birds.pop(); f.perch = false;
+        perched = { until: frame + (DEMO ? 30 : 60 + (Math.random()*80|0)) };
+      }
+    }
+    if ((f.dir > 0 && f.x > 76) || (f.dir < 0 && f.x < -12)){
+      flock = null; nextFlockAt = frame + (DEMO ? 30 : 160 + (Math.random()*160|0));
+    }
+  }
+
+  // the train: NS yellow and blue along the rail every few minutes
+  var train = null, nextTrainAt = DEMO ? 20 : 200;
+  function drawTrain(lit){
+    if (!train){
+      if (frame >= nextTrainAt){
+        var dir = Math.random() < 0.5 ? 1 : -1;
+        train = { dir:dir, x: dir > 0 ? -24 : 64, len: 18 + (Math.random()*8|0) };
+      }
+      return;
+    }
+    var t = train, x0 = t.x|0;
+    ctx.fillStyle = "#FFC917"; ctx.fillRect(x0, 60, t.len, 2);
+    ctx.fillStyle = "#003082"; ctx.fillRect(x0, 62, t.len, 1);
+    ctx.fillStyle = lit ? "#FFF3A8" : "#1B262F";
+    for (var w = x0 + 2; w < x0 + t.len - 1; w += 3) ctx.fillRect(w, 60, 1, 1);
+    // nose
+    ctx.fillStyle = "#003082";
+    ctx.fillRect(t.dir > 0 ? x0 + t.len - 1 : x0, 60, 1, 1);
+    t.x += 1.25 * t.dir;
+    if ((t.dir > 0 && t.x > 66) || (t.dir < 0 && t.x < -t.len - 2)){
+      train = null; nextTrainAt = frame + (DEMO ? 60 : 1400 + (Math.random()*1600|0));   // 3-6 min
+    }
+  }
+
+  function life(p, lit){
+    birds(p);
+    drawTrain(lit);
+  }
+
   /* ---------- render loop at a deliberate 8fps: GIF cadence, not 60fps polish ---------- */
   var frame = 0, current = "clearDay", isNight = false;
 
@@ -560,6 +662,7 @@
         (painters[current] || painters.overcast)(frame, p);
         skyline(p.ink, lit);
       }
+      life(p, lit);
       return;
     }
 
