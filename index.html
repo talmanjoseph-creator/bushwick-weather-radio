@@ -1,10 +1,21 @@
 <!doctype html>
-<!-- Utrecht Weather Radio v5: news EN=DutchNews.nl / NL=RTV Utrecht -->
+<!-- Utrecht Weather Radio v6: media session, icons, link preview -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Utrecht Weather Radio</title>
+<meta name="description" content="Current Utrecht weather as a pixel scene, NTS Radio live, and the day's headlines.">
+<meta name="theme-color" content="#0E1A24">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Utrecht Weather Radio">
+<meta property="og:description" content="Current Utrecht weather as a pixel scene, NTS Radio live, and the day's headlines.">
+<meta property="og:image" content="https://talmanjoseph-creator.github.io/bushwick-weather-radio/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=DotGothic16&display=swap">
@@ -112,7 +123,7 @@
     flex:none; font-size:10px; letter-spacing:2px;
     color:var(--accent); border:1px solid var(--accent);
     padding:3px 6px 2px;
-    background:none; font-family:inherit; cursor:pointer;
+    background:none; font-family:var(--mono); cursor:pointer;
   }
   .ticker{ flex:1; min-width:0; overflow:hidden; }
   .ticker-inner{
@@ -120,7 +131,7 @@
     font-size:11px; letter-spacing:1px;
     animation-name:tick; animation-timing-function:linear; animation-iteration-count:infinite;
   }
-  .ticker-inner a{ color:var(--fg); text-decoration:none; }
+  .ticker-inner a{ color:var(--ink); text-decoration:none; }
   .ticker-inner a:hover, .ticker-inner a:focus{ color:var(--accent); }
   .ticker:hover .ticker-inner, .ticker:focus-within .ticker-inner{ animation-play-state:paused; }
   .sep{ color:var(--dim); margin:0 12px; }
@@ -550,6 +561,7 @@
         current = info.scene;
         applyTheme(current);
         paint();
+        updateMediaSession();
       })
       .catch(function(){
         elCond.textContent = "no signal from the sky";
@@ -568,6 +580,8 @@
     };
   }
 
+  var showName = { 1: "NTS 1", 2: "NTS 2" };
+
   function loadNTS(){
     fetch("https://www.nts.live/api/v2/live")
       .then(function(r){ return r.json(); })
@@ -582,11 +596,13 @@
             return;
           }
           var det = now.embeds && now.embeds.details;
-          el.show.textContent = (det && det.name) || now.broadcast_title || ("NTS " + ch);
+          showName[ch] = (det && det.name) || now.broadcast_title || ("NTS " + ch);
+          el.show.textContent = showName[ch];
           var end = new Date(now.end_timestamp);
           el.until.textContent = "ON AIR UNTIL " +
             end.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"}).toUpperCase();
         });
+        updateMediaSession();
       })
       .catch(function(){
         [1, 2].forEach(function(ch){
@@ -620,7 +636,58 @@
     audio.load();
     if (playingCh) setBtn(playingCh, "off", "&#9654; PLAY");
     playingCh = 0;
+    updateMediaSession();
   }
+
+  /* ---------- lock screen / control centre: Media Session ---------- */
+  var ms = navigator.mediaSession;
+
+  // the live pixel scene, blown up crisp, as the "album art"
+  function sceneArtwork(){
+    var big = document.createElement("canvas");
+    big.width = big.height = 512;
+    var b = big.getContext("2d");
+    b.imageSmoothingEnabled = false;
+    b.drawImage(cv, 0, 0, 512, 512);
+    return big.toDataURL("image/png");
+  }
+
+  function updateMediaSession(){
+    if (!ms) return;
+    if (!playingCh){
+      ms.playbackState = "none";
+      return;
+    }
+    ms.metadata = new MediaMetadata({
+      title:  showName[playingCh],
+      artist: "NTS " + playingCh + " · Live from London",
+      album:  "Utrecht Weather Radio",
+      artwork: [{ src: sceneArtwork(), sizes: "512x512", type: "image/png" }]
+    });
+    ms.playbackState = "playing";
+  }
+
+  if (ms){
+    ms.setActionHandler("play", function(){
+      if (playingCh) audio.play().then(function(){ ms.playbackState = "playing"; });
+    });
+    ms.setActionHandler("pause", function(){
+      audio.pause();
+      ms.playbackState = "paused";
+    });
+    ms.setActionHandler("stop", stopStream);
+    // live radio: nothing to seek
+    ["seekbackward","seekforward","previoustrack","nexttrack"].forEach(function(a){
+      try { ms.setActionHandler(a, null); } catch(e){}
+    });
+  }
+
+  audio.addEventListener("pause", function(){
+    if (ms && playingCh) ms.playbackState = "paused";
+  });
+  audio.addEventListener("playing", function(){
+    if (ms && playingCh) ms.playbackState = "playing";
+  });
 
   [1, 2].forEach(function(ch){
     chEls(ch).play.addEventListener("click", function(){
@@ -633,6 +700,7 @@
       audio.play().then(function(){
         playingCh = ch;
         setBtn(ch, "on", "&#9646;&#9646; STOP");
+        updateMediaSession();
         loadNTS();
       }).catch(function(){
         setBtn(ch, "off", "&#9654; PLAY");
