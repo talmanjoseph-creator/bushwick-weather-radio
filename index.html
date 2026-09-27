@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Utrecht Weather Radio v9: title card -->
+<!-- Utrecht Weather Radio v10: faster, longer title card -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -239,6 +239,11 @@
   #card .w.sm{ font-size:clamp(11px, 3.2vw, 16px); letter-spacing:.3em; }
   #card .w.tl{ position:absolute; top:18px; left:18px; text-align:left; }
   #card .w.br{ position:absolute; bottom:18px; right:18px; text-align:right; }
+  #card .w.big{ transform:scale(1.9); }                 /* cropped by the viewport on purpose */
+  #card .w.up{ transform:translateY(-32vh); }
+  #card .w.dn{ transform:translateY(30vh); }
+  #card .w.lf{ transform:translateX(-22vw) scale(1.4); }
+  #card .w.rt{ transform:translateX(22vw) scale(1.4); }
   #card.black{ background:#000; }
 
   /* --- title sequence: chrome waits offstage until the scene has drawn --- */
@@ -779,13 +784,42 @@
      Six hard cuts at 3/s (under the flash-safety line), each a different
      composition in the site's own fonts and palettes, then a beat of black,
      then the sky starts to dither in. */
+  /* 26 cuts at ~6/s. Bright (inverted) cards never come more than twice a
+     second, so the sequence stays under the flash-safety line even though
+     the cutting is faster than that. h = hold, in cut units. */
+  var C_MONO = "w mono fit", C_DG = "w dg fit";
+  function card(text, cls, scene, opt){
+    opt = opt || {};
+    var html = '<span class="' + cls + (opt.mod ? " " + opt.mod : "") + '">' + text + '</span>' + (opt.extra || "");
+    return { html: html, scene: scene, inv: !!opt.inv, h: opt.h || 1 };
+  }
   var CARDS = [
-    { html:'<span class="w mono fit">UTRECHT</span>',              scene:"clearDay" },
-    { html:'<span class="w dg fit">NEWS</span>',                    scene:"thunder",     inv:true },
-    { html:'<span class="w mono sm tl">52.0907 N</span><span class="w mono md">AND</span><span class="w mono sm br">5.1214 E</span>', scene:"rain" },
-    { html:'<span class="w dg fit">WEATHER</span>',               scene:"clearNight",  inv:true },
-    { html:'<span class="w mono md">NTS 1 &middot; NTS 2</span><span class="w mono sm br">LIVE FROM LONDON</span>', scene:"snow" },
-    { html:'<span class="w dg fit">RADIO</span>',                   scene:"fog",         inv:true }
+    card("UTRECHT", C_MONO, "clearDay"),
+    card("NEWS",    C_DG,   "thunder",    { inv:true }),
+    card("AND",     "w mono md", "rain",  { extra:'<span class="w mono sm tl">52.0907 N</span><span class="w mono sm br">5.1214 E</span>' }),
+    card("WEATHER", C_DG,   "clearNight", { mod:"big" }),
+    card("RADIO",   C_MONO, "drizzle"),
+    card("NTS",     C_DG,   "fog",        { inv:true, h:2 }),
+    card("1",       C_MONO, "overcast",   { mod:"lf" }),
+    card("2",       C_MONO, "overcast",   { mod:"rt" }),
+    card("LIVE",    C_DG,   "cloudyDay"),
+    card("FROM",    C_MONO, "cloudyNight",{ mod:"up" }),
+    card("LONDON",  C_DG,   "snow",       { inv:true }),
+    card("NIEUWS",  C_MONO, "rain",       { mod:"dn" }),
+    card("EN",      "w mono md", "drizzle"),
+    card("WEER",    C_DG,   "clearDay",   { mod:"big" }),
+    card("UTRECHT", C_DG,   "thunder",    { inv:true, h:2 }),
+    card("52.09 N", C_MONO, "clearNight", { mod:"up" }),
+    card("5.12 E",  C_MONO, "clearNight", { mod:"dn" }),
+    card("DOM",     C_DG,   "fog",        { mod:"big" }),
+    card("NEWS",    C_MONO, "cloudyDay",  { inv:true }),
+    card("AND",     "w mono md", "cloudyNight"),
+    card("WEATHER", C_MONO, "rain",       { mod:"lf" }),
+    card("RADIO",   C_DG,   "overcast",   { mod:"rt" }),
+    card("NTS 1",   C_MONO, "snow",       { inv:true }),
+    card("NTS 2",   C_MONO, "snow"),
+    card("UTRECHT", C_MONO, "clearDay",   { h:2 }),
+    card("NEWS AND WEATHER RADIO", "w mono sm", "thunder", { inv:true, h:3 })
   ];
   var elCard = document.getElementById("card"), carding = false;
   // size each .fit word to 88% of the viewport width, whatever font it landed in
@@ -793,12 +827,12 @@
     var ws = elCard.querySelectorAll(".w.fit"), avail = window.innerWidth * 0.88;
     for (var i=0;i<ws.length;i++){
       ws[i].style.fontSize = "100px";
-      var w = ws[i].getBoundingClientRect().width || 1;
+      var w = ws[i].offsetWidth || 1;   // layout width: ignores the crop transforms
       ws[i].style.fontSize = Math.min(220, 100 * avail / w) + "px";
     }
   }
   function runCard(then){
-    var i = 0, CUT = 330;
+    var i = 0, CUT = 165;
     carding = true;
     document.body.classList.add("cut");
     elCard.classList.add("show");
@@ -809,7 +843,7 @@
         elCard.className = "show" + (c.inv ? " inv" : "");
         elCard.innerHTML = c.html;
         fitWords();
-        setTimeout(next, CUT);
+        setTimeout(next, CUT * c.h);
       } else {
         // the beat of black
         elCard.className = "show black";
