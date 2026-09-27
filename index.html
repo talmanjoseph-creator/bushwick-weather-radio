@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Utrecht Weather Radio v17: colour drift, sunrise/sunset in the meta -->
+<!-- Utrecht Weather Radio v18: drift saturation up -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -996,8 +996,8 @@
   function driftColor(pageHex){
     var c = hexHsl(pageHex);
     var hue = (c.h + driftStep*47) % 360;            // 47°: a slow walk around the wheel that never repeats soon
-    var sat = Math.min(0.5, Math.max(0.3, c.s + 0.2)),
-        lig = Math.min(0.15, c.l + 0.045);
+    var sat = Math.min(0.62, Math.max(0.45, c.s + 0.3)),
+        lig = Math.min(0.165, c.l + 0.055);
     return "hsl(" + hue.toFixed(0) + " " + (sat*100).toFixed(0) + "% " + (lig*100).toFixed(1) + "%)";
   }
   function drift(){
