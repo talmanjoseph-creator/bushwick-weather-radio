@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Utrecht Weather Radio v21: forecast from the repo -->
+<!-- Utrecht Weather Radio v22: the last 24 hours as skies -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -56,7 +56,7 @@
   }
 
   /* --- the scene --- */
-  canvas{
+  #sky{
     width:clamp(192px,66vw,256px);
     height:clamp(192px,66vw,256px);
     image-rendering:pixelated;
@@ -64,6 +64,18 @@
     display:block;
     border:2px solid var(--line);
   }
+  /* --- the last 24 hours, one sky per hour --- */
+  .strip{ display:flex; flex-direction:column; align-items:center; gap:6px; margin-top:-14px; }
+  #hist{
+    width:clamp(192px,66vw,256px);
+    height:auto; aspect-ratio:96/14;
+    image-rendering:pixelated; image-rendering:crisp-edges;
+    display:block; border:2px solid var(--line); border-top:0;
+  }
+  .strip[hidden]{ display:none; }
+  .histlabel{ font-family:var(--mono); font-size:9px; letter-spacing:.14em; color:var(--dim); min-height:1.2em; }
+  .intro .strip{ opacity:0; }
+  .strip{ transition:opacity .35s steps(4,end); }
 
   /* --- readout --- */
   .readout{
@@ -284,6 +296,10 @@
   </div>
 
   <canvas id="sky" width="64" height="64" role="img" aria-label="Pixel animation of current Utrecht weather"></canvas>
+  <div class="strip" id="strip" hidden>
+    <canvas id="hist" width="96" height="14" role="img" aria-label="The last 24 hours of Utrecht weather, one sky per hour"></canvas>
+    <div class="histlabel" id="histlabel">LAST 24 HOURS &middot; TAP AN HOUR</div>
+  </div>
 
   <div class="readout">
     <button class="temp" id="temp" title="Click to switch units">--&deg;</button>
@@ -1243,6 +1259,82 @@
       });
   }
   loadWeather();
+
+  /* ---------- the last 24 hours: one dithered sky per hour, sun or moon at its height ---------- */
+  var elStrip = document.getElementById("strip"), hc = document.getElementById("hist"),
+      hctx = hc.getContext("2d"), elHistLabel = document.getElementById("histlabel"), histHours = null;
+  hctx.imageSmoothingEnabled = false;
+
+  function drawStrip(){
+    if (!histHours || !histHours.length) return;
+    var W = 96, H = 14, colW = 4, n = Math.min(24, histHours.length), start = 24 - n;
+    hctx.fillStyle = scenePalette(current).page; hctx.fillRect(0, 0, W, H);
+    for (var i=0;i<n;i++){
+      var e = histHours[histHours.length - n + i], x0 = (start + i) * colW;
+      var key = decode(e.code, e.day === 1).scene, p = SCENES[key];
+      // sky, dithered top to bottom
+      for (var y=0;y<11;y++){
+        var t = Math.pow(y/10, 0.85);
+        for (var x=0;x<colW;x++){
+          var th = (BAYER[y&3][(x0+x)&3] + 0.5)/16;
+          hctx.fillStyle = t > th ? p.sky[1] : p.sky[0];
+          hctx.fillRect(x0+x, y, 1, 1);
+        }
+      }
+      // sun or moon at its height for that hour
+      if (sun.rise){
+        var f, night = e.day !== 1, day = 86400;
+        var rise = sun.rise - Math.round((sun.rise - e.t)/day)*day, set = rise + (sun.set - sun.rise);
+        if (!night) f = (e.t - rise)/(set - rise);
+        else f = e.t > set ? (e.t - set)/(rise + day - set) : (e.t - (set - day))/(rise - (set - day));
+        f = Math.max(0, Math.min(1, f));
+        var sy = Math.round(9 - Math.sin(f*Math.PI)*7);
+        hctx.fillStyle = night ? "#EDE7CE" : "#FFD84D";
+        hctx.fillRect(x0 + 1, sy, 2, 1);
+        if (!night) hctx.fillRect(x0 + 1, sy - 1, 2, 1);
+      }
+      // rain or snow: a couple of pixels falling through the lower sky
+      if (e.mm > 0){
+        var snow = key === "snow";
+        hctx.fillStyle = snow ? "#FFFFFF" : "#C3DCEA";
+        hctx.fillRect(x0 + 1, 7, 1, 1); hctx.fillRect(x0 + 3, 9, 1, 1);
+        if (e.mm > 1){ hctx.fillRect(x0 + 2, 5, 1, 1); hctx.fillRect(x0, 8, 1, 1); }
+      }
+      // ground
+      hctx.fillStyle = p.ink; hctx.fillRect(x0, 11, colW, 3);
+    }
+    // a tick at the current hour
+    hctx.fillStyle = "rgba(255,255,255,.5)"; hctx.fillRect(95, 11, 1, 3);
+  }
+
+  function loadHistory(){
+    fetch("history.json?t=" + (Date.now()/60000|0))
+      .then(function(r){ if (!r.ok) throw 0; return r.json(); })
+      .then(function(d){
+        if (!d.hours || !d.hours.length) throw 0;
+        histHours = d.hours;
+        elStrip.hidden = false;
+        drawStrip();
+      })
+      .catch(function(){ elStrip.hidden = true; });
+  }
+  loadHistory();
+  setInterval(loadHistory, 15*60*1000);
+  setInterval(drawStrip, 60*1000);
+
+  var histLabelTimer = null;
+  function histAt(e){
+    if (!histHours) return;
+    var r = hc.getBoundingClientRect(), col = Math.floor((e.clientX - r.left) / r.width * 24);
+    var idx = histHours.length - 24 + col;
+    if (idx < 0 || idx >= histHours.length) return;
+    var h = histHours[idx], v = useF ? Math.round(h.temp*9/5+32) : Math.round(h.temp);
+    elHistLabel.textContent = clockStr(h.t) + " \u00B7 " + v + "\u00B0 \u00B7 " + decode(h.code, h.day === 1).label.toUpperCase();
+    clearTimeout(histLabelTimer);
+    histLabelTimer = setTimeout(function(){ elHistLabel.innerHTML = "LAST 24 HOURS &middot; TAP AN HOUR"; }, 4000);
+  }
+  hc.addEventListener("pointerdown", function(e){ histAt(e); e.preventDefault(); });
+  hc.addEventListener("pointermove", function(e){ if (e.buttons) histAt(e); });
 
   /* ---------- NTS ---------- */
   function chEls(ch){
