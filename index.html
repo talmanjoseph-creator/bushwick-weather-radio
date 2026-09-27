@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Utrecht Weather Radio v4: EN news ticker w/ NL toggle -->
+<!-- Utrecht Weather Radio v5: news EN=DutchNews.nl / NL=RTV Utrecht -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -649,99 +649,72 @@
     }
   });
 
-  /* ---------- Utrecht news ticker (RTV Utrecht, EN/NL toggle) ---------- */
+  /* ---------- news ticker: EN = DutchNews.nl, NL = RTV Utrecht ---------- */
   var elNews   = document.getElementById("news"),
       elTag    = document.getElementById("newsTag"),
       elTicker = document.getElementById("tickerInner");
-  var NEWS_URL = "https://api.rss2json.com/v1/api.json?rss_url=" +
-                 encodeURIComponent("https://www.rtvutrecht.nl/rss/nieuws.xml");
-  var TR_URL = "https://api.mymemory.net/get?langpair=nl|en&q=";
-  var newsItems = [], newsLang = "en", tCache = {};
-
-  try { tCache = JSON.parse(localStorage.getItem("bwrT") || "{}"); } catch(e){ tCache = {}; }
-  function saveCache(){
-    try {
-      if(Object.keys(tCache).length > 500) tCache = {};
-      localStorage.setItem("bwrT", JSON.stringify(tCache));
-    } catch(e){}
-  }
+  var FEEDS = {
+    en: "https://api.rss2json.com/v1/api.json?rss_url=" +
+        encodeURIComponent("https://www.dutchnews.nl/feed/"),
+    nl: "https://api.rss2json.com/v1/api.json?rss_url=" +
+        encodeURIComponent("https://www.rtvutrecht.nl/rss/nieuws.xml")
+  };
+  var newsLang = "en", newsCache = { en: null, nl: null };
 
   function esc(s){
     return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;")
                     .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   }
 
-  /* translate a small batch of Dutch headlines; done(lines|null) */
-  function trBatch(titles, done){
-    fetch(TR_URL + encodeURIComponent(titles.join("\n")))
-      .then(function(r){ if(!r.ok) throw 0; return r.json(); })
-      .then(function(d){
-        var t = d && d.responseData && d.responseData.translatedText;
-        if(!t || /MYMEMORY WARNING/i.test(t)) throw 0;
-        var lines = t.split("\n");
-        if(lines.length !== titles.length) throw 0;
-        done(lines);
-      })
-      .catch(function(){ done(null); });
-  }
-
-  function ensureEnglish(items, done){
-    var missing = items.filter(function(h){ return h.title && !tCache[h.title]; }),
-        chunks = [], cur = [], len = 0;
-    missing.forEach(function(h){
-      if(len + h.title.length > 450 && cur.length){ chunks.push(cur); cur = []; len = 0; }
-      cur.push(h.title); len += h.title.length + 1;
-    });
-    if(cur.length) chunks.push(cur);
-    if(!chunks.length){ done(); return; }
-    var pending = chunks.length;
-    chunks.forEach(function(ch){
-      trBatch(ch, function(lines){
-        if(lines) ch.forEach(function(orig, i){ tCache[orig] = lines[i].trim(); });
-        if(--pending === 0){ saveCache(); done(); }
-      });
-    });
+  function currentItems(){
+    return newsCache[newsLang] ||
+           newsCache[newsLang === "en" ? "nl" : "en"] || [];
   }
 
   function renderNews(){
-    var half = newsItems.map(function(h){
-      var src = (newsLang === "en" && tCache[h.title]) ? tCache[h.title] : h.title,
-          t = esc(src.toUpperCase()),
-          inner = h.link
-            ? '<a href="'+esc(h.link)+'" target="_blank" rel="noopener">'+t+'</a>'
-            : t;
-      return '<span class="tick">'+inner+'<span class="sep">///</span></span>';
-    }).join("");
-    if(reduce){
-      elTicker.innerHTML = half; /* no motion: static list */
+    var items = currentItems(),
+        half = items.map(function(h){
+          var t = esc((h.title || "").toUpperCase()),
+              inner = h.link
+                ? '<a href="'+esc(h.link)+'" target="_blank" rel="noopener">'+t+'</a>'
+                : t;
+          return '<span class="tick">'+inner+'<span class="sep">///</span></span>';
+        }).join("");
+    if(items.length){
+      if(reduce){
+        elTicker.innerHTML = half; /* no motion: static list */
+      } else {
+        elTicker.innerHTML = half + half; /* two copies: seamless -50% loop */
+        elTicker.style.animationDuration =
+          Math.max(20, elTicker.textContent.length*0.15) + "s";
+      }
+      elNews.hidden = false;
     } else {
-      elTicker.innerHTML = half + half; /* two copies: seamless -50% loop */
-      elTicker.style.animationDuration =
-        Math.max(20, elTicker.textContent.length*0.15) + "s";
+      elNews.hidden = true;
     }
     elTag.innerHTML = "NIEUWS &middot; " + newsLang.toUpperCase();
     elTag.setAttribute("aria-label",
       "Headlines in " + (newsLang === "en" ? "English" : "Dutch") + " — activate to switch");
   }
 
-  function loadNews(){
-    fetch(NEWS_URL)
+  function loadFeed(lang){
+    fetch(FEEDS[lang])
       .then(function(r){ if(!r.ok) throw 0; return r.json(); })
       .then(function(d){
         var items = (d.items || []).slice(0, 10);
         if(d.status !== "ok" || !items.length) throw 0;
-        newsItems = items;
+        newsCache[lang] = items;
         renderNews();
-        elNews.hidden = false;
-        if(newsLang === "en") ensureEnglish(items, renderNews);
       })
-      .catch(function(){ elNews.hidden = true; });
+      .catch(function(){ renderNews(); });
   }
+
+  function loadNews(){ loadFeed("en"); loadFeed("nl"); }
 
   elTag.addEventListener("click", function(){
     newsLang = (newsLang === "en") ? "nl" : "en";
     renderNews();
-    if(newsLang === "en") ensureEnglish(newsItems, renderNews);
+    if(!newsCache[newsLang]) loadFeed(newsLang);
   });
 
   loadNews();
