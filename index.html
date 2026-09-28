@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Weather Radio v30: manifest, self-refresh -->
+<!-- Weather Radio v31: city switch above the scene -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -235,6 +235,19 @@
     color:var(--dim);
   }
 
+  /* --- city switch --- */
+  .cities{ display:flex; gap:0; margin-bottom:-10px; }
+  .citybtn{
+    font-family:var(--mono); font-size:9px; letter-spacing:.14em;
+    color:var(--dim); background:none; border:1px dotted var(--line);
+    padding:6px 12px 5px; cursor:pointer;
+    transition:color 1.2s ease, border-color 1.2s ease, background-color 1.2s ease;
+  }
+  .citybtn + .citybtn{ border-left:0; }
+  .citybtn[aria-selected="true"]{ color:var(--page); background:var(--accent); border-color:var(--accent); border-style:solid; }
+  .intro .cities{ opacity:0; }
+  .cities{ transition:opacity .35s steps(4,end); }
+
   /* --- sound toggle --- */
   .soundtag{
     font-family:var(--mono); font-size:9px; letter-spacing:.14em;
@@ -313,6 +326,11 @@
     <div class="ticker"><div class="ticker-inner" id="tickerInner"></div></div>
   </div>
 
+  <div class="cities" id="cities" role="tablist" aria-label="City">
+    <button class="citybtn" data-city="utrecht" role="tab">UTRECHT</button>
+    <button class="citybtn" data-city="nyc" role="tab">NEW YORK</button>
+  </div>
+
   <canvas id="sky" width="64" height="64" role="img" aria-label="Pixel animation of current Utrecht weather"></canvas>
   <div class="strip" id="strip" hidden>
     <canvas id="hist" width="96" height="14" role="img" aria-label="The last 24 hours, one sky per hour"></canvas>
@@ -351,7 +369,6 @@
 
   <div class="tags">
     <button class="soundtag" id="soundTag" data-on="0" aria-pressed="false">&#9834; SOUND OFF</button>
-    <button class="soundtag" id="cityTag" aria-label="Switch city">&#8646; NEW YORK</button>
     <button class="soundtag" id="cardTag" aria-label="Share a postcard of the current scene">&#9993; POSTCARD</button>
   </div>
 </main>
@@ -1254,9 +1271,9 @@
   setInterval(drift, 8000);
 
   /* ---------- the other city ---------- */
-  var elCity = document.getElementById("cityTag");
+  var cityBtns = document.querySelectorAll(".citybtn");
   function showCity(){
-    elCity.innerHTML = "&#8646; " + city.otherName;
+    for (var i=0;i<cityBtns.length;i++) cityBtns[i].setAttribute("aria-selected", cityBtns[i].dataset.city === city.key ? "true" : "false");
     elMeta.innerHTML = city.name + " &middot; " + city.coords;
     cv.setAttribute("aria-label", "Pixel animation of current " + city.name + " weather");
     document.title = city.title + " Weather Radio";
@@ -1280,7 +1297,7 @@
     loadWeather(); loadHistory(); loadNews();
     SFX.thud();
   }
-  elCity.addEventListener("click", function(){ switchCity(city.other); });
+  for (var ci=0;ci<cityBtns.length;ci++) cityBtns[ci].addEventListener("click", function(){ switchCity(this.dataset.city); });
 
   /* ---------- postcards: the scene, the time and the temperature as a 1080x1080 image ---------- */
   var elPost = document.getElementById("cardTag");
